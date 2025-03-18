@@ -30,10 +30,25 @@ DEBUG_DIR = "debug_logs"
 # Ensure debug directory exists
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-def get_debug_filepath(prefix):
-    """Generate a debug file path with timestamp."""
+def get_debug_filepath(prefix, file_type="html"):
+    """Generate a debug file path with timestamp.
+    
+    Args:
+        prefix: The prefix for the filename
+        file_type: The file type (html or png)
+    
+    Returns:
+        The full file path
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return os.path.join(DEBUG_DIR, f"{prefix}_{timestamp}.html")
+    
+    if file_type == "png":
+        # Create screenshots directory if it doesn't exist
+        screenshots_dir = os.path.join(DEBUG_DIR, "screenshots")
+        os.makedirs(screenshots_dir, exist_ok=True)
+        return os.path.join(screenshots_dir, f"{prefix}_{timestamp}.png")
+    else:
+        return os.path.join(DEBUG_DIR, f"{prefix}_{timestamp}.html")
 
 def setup_browser(headless=False):
     """Set up and return a Selenium browser instance."""

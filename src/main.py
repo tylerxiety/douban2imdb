@@ -44,7 +44,9 @@ def main():
         export_douban_ratings()
     
     if args.step == "export_imdb" or args.step == "all":
-        logger.info("Step 2: Exporting IMDb ratings")
+        # Note: This step is optional. If skipped, the migration will still work
+        # but will need to check if each movie is already rated during migration.
+        logger.info("Step 2: Exporting IMDb ratings (optional)")
         export_imdb_ratings()
     
     if args.step == "prepare" or args.step == "all":

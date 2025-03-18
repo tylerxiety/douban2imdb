@@ -1478,9 +1478,9 @@ def check_for_detection(browser):
         for phrase in detection_phrases:
             if phrase in page_text:
                 # Save a screenshot of the detection page
-                os.makedirs("debug_logs", exist_ok=True)
+                os.makedirs("debug_logs/screenshots", exist_ok=True)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                screenshot_path = os.path.join("debug_logs", f"detection_{timestamp}.png")
+                screenshot_path = os.path.join("debug_logs/screenshots", f"detection_{timestamp}.png")
                 browser.save_screenshot(screenshot_path)
                 
                 # Save the HTML content
@@ -1529,9 +1529,9 @@ def handle_captcha(browser):
     """Handle captcha/verification by prompting user for manual intervention."""
     try:
         # Save a screenshot for reference
-        os.makedirs("debug_logs", exist_ok=True)
+        os.makedirs("debug_logs/screenshots", exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        screenshot_path = os.path.join("debug_logs", f"captcha_{timestamp}.png")
+        screenshot_path = os.path.join("debug_logs/screenshots", f"captcha_{timestamp}.png")
         browser.save_screenshot(screenshot_path)
         
         print("\n" + "="*60)
