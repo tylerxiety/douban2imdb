@@ -53,28 +53,30 @@ def load_json(filepath):
 
 def convert_douban_to_imdb_rating(douban_rating):
     """
-    Convert Douban's 5-star rating to IMDb's 10-star rating.
+    Convert Douban rating (1-5 scale) to IMDb rating (1-10 scale).
     
     Args:
-        douban_rating: Rating on Douban's 5-star scale (1, 2, 3, 4, 5)
-                       Note: Douban only allows whole numbers from 1 to 5
-    
+        douban_rating: Rating on Douban scale (1-5)
+        
     Returns:
-        Equivalent rating on IMDb's 10-star scale (1-10)
+        Rating on IMDb scale (1-10)
     """
-    # Mapping from Douban rating to IMDb rating
-    # Douban: 1-5 whole numbers
-    # IMDb: 1-10 whole numbers
-    rating_map = {
-        1: 2,   # Douban 1 star -> IMDb 2/10
-        2: 4,   # Douban 2 stars -> IMDb 4/10
-        3: 6,   # Douban 3 stars -> IMDb 6/10
-        4: 8,   # Douban 4 stars -> IMDb 8/10
-        5: 10   # Douban 5 stars -> IMDb 10/10
-    }
+    if douban_rating is None:
+        return None
     
-    # Return the mapped rating or default to 1 (IMDb's minimum)
-    return rating_map.get(douban_rating, 1)
+    # Simple linear mapping: double the Douban rating
+    # Douban 1 -> IMDb 2
+    # Douban 2 -> IMDb 4
+    # Douban 3 -> IMDb 6
+    # Douban 4 -> IMDb 8
+    # Douban 5 -> IMDb 10
+    imdb_rating = int(douban_rating * 2)
+    
+    # Ensure rating is within IMDb's 1-10 range
+    return max(1, min(10, imdb_rating))
+
+# Alias for backward compatibility
+douban_to_imdb_rating = convert_douban_to_imdb_rating
 
 def normalize_movie_title(title):
     """

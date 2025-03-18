@@ -6,6 +6,7 @@ import time
 import json
 import logging
 import random
+import multiprocessing
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -27,13 +28,12 @@ load_dotenv()
 DOUBAN_EXPORT_PATH = os.getenv("DOUBAN_EXPORT_PATH", "data/douban_ratings.json")
 IMDB_EXPORT_PATH = os.getenv("IMDB_EXPORT_PATH", "data/imdb_ratings.json")
 MIGRATION_PLAN_PATH = os.getenv("MIGRATION_PLAN_PATH", "data/migration_plan.json")
-MIGRATION_PROGRESS_PATH = os.getenv("MIGRATION_PROGRESS_PATH", "data/migration_progress.json")
 
 # Constants
 MAX_RETRIES = 5  # Increased from 3 to 5 for better retry handling
-SPEED_MODE = True  # Set to True to disable images for faster loading
+SPEED_MODE = False  # Set to True to disable images for faster loading
 CONNECTION_TIMEOUT = 90  # Seconds to wait for connections before timeout
-WAIT_BETWEEN_MOVIES = (0.5, 1)  # Further reduced wait between movies for faster processing
+WAIT_BETWEEN_MOVIES = (1, 2)  # Reduced wait between movies for faster processing
 PROXY = os.getenv("PROXY", None)  # Proxy in format http://user:pass@host:port
 
 def setup_browser(headless=False, proxy=None):
@@ -84,23 +84,9 @@ def setup_browser(headless=False, proxy=None):
         if SPEED_MODE:
             prefs = {
                 "profile.managed_default_content_settings.images": 2,
-                "profile.default_content_setting_values.notifications": 2,
-                # Disable videos, plugins, and other resource-heavy elements
-                "profile.managed_default_content_settings.plugins": 2,
-                "profile.managed_default_content_settings.media_stream": 2,
-                "profile.managed_default_content_settings.geolocation": 2,
-                "profile.managed_default_content_settings.popups": 2,
-                "profile.managed_default_content_settings.javascript": 1,  # Keep JavaScript enabled for functionality
-                "profile.managed_default_content_settings.cookies": 1,  # Keep cookies enabled for login
-                "profile.managed_default_content_settings.automatic_downloads": 2
+                "profile.default_content_setting_values.notifications": 2
             }
             options.add_experimental_option("prefs", prefs)
-            
-            # Additional performance options
-            options.add_argument("--disable-extensions")
-            options.add_argument("--disable-plugins")
-            options.add_argument("--disable-plugins-discovery")
-            options.add_argument("--disable-infobars")
         
         # Headless mode if requested
         if headless:
@@ -202,7 +188,7 @@ def access_movie_page_by_id(browser, imdb_id, retry_count=0):
         logger.info(f"Accessing URL: {url}")
         
         # Add a random delay before access to mimic human behavior
-        time.sleep(random.uniform(0.1, 0.3))
+        time.sleep(random.uniform(0.5, 1))
         
         # Try to handle connection timeouts gracefully
         try:
@@ -937,265 +923,203 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 return rate_movie_on_imdb(browser, imdb_id, rating, title, 0, test_mode)
             return False
 
-def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
-    """Execute the migration plan and rate movies on IMDb."""
-    try:
-        # Extract movies to migrate
-        movies_to_migrate = migration_plan.get("to_migrate", [])
-        total_movies = len(movies_to_migrate)
+def execute_migration_plan(migration_plan, max_movies=None, test_mode=False, parallel=False):
+    """Execute the migration plan by rating movies on IMDb."""
+    # Get the movies to migrate
+    movies_to_migrate = migration_plan.get("to_migrate", [])
+    total_movies = len(movies_to_migrate)
+    
+    if not movies_to_migrate:
+        logger.warning("No movies to migrate found in plan")
+        return False
+    
+    if max_movies:
+        movies_to_migrate = movies_to_migrate[:max_movies]
+        logger.info(f"Processing {len(movies_to_migrate)} out of {total_movies} movies (limited by max_movies)")
+    else:
+        logger.info(f"Processing all {total_movies} movies from migration plan")
+    
+    if test_mode:
+        print(f"RUNNING IN TEST MODE: Will provide more debug information and save screenshots")
+        os.makedirs("data/screenshots", exist_ok=True)
+    
+    # Handle parallel processing
+    if parallel and not test_mode:
+        num_processes = min(multiprocessing.cpu_count(), 4)  # Use up to 4 processes
+        logger.info(f"Running in parallel mode with {num_processes} processes")
         
-        if not movies_to_migrate:
-            logger.warning("No movies to migrate in the plan")
+        # Split the movies into chunks for each process
+        chunk_size = len(movies_to_migrate) // num_processes
+        if chunk_size == 0:
+            chunk_size = 1
+        
+        chunks = []
+        for i in range(0, len(movies_to_migrate), chunk_size):
+            chunks.append(movies_to_migrate[i:i + chunk_size])
+        
+        # Let the user confirm once for all processes
+        confirmation = input(f"Ready to rate {len(movies_to_migrate)} movies in parallel using {num_processes} processes? (y/n): ")
+        if confirmation.lower() != "y":
+            print("Aborting migration")
             return False
         
-        logger.info(f"Found {total_movies} movies to migrate")
+        print("\nIMPORTANT: Multiple browser windows will open. You need to log in to IMDb in EACH window.")
+        print("Please wait for all browser windows to appear before proceeding with login.\n")
         
-        # Apply max_movies limit if specified
-        if max_movies and max_movies > 0 and max_movies < total_movies:
-            logger.info(f"Limiting to {max_movies} movies as requested")
-            movies_to_migrate = movies_to_migrate[:max_movies]
+        # Create and start processes
+        processes = []
+        for i, chunk in enumerate(chunks):
+            p = multiprocessing.Process(
+                target=process_movie_chunk,
+                args=(chunk, i, test_mode)
+            )
+            processes.append(p)
+            p.start()
         
-        # Load progress data if it exists
-        progress_data = {}
-        if os.path.exists(MIGRATION_PROGRESS_PATH):
-            try:
-                with open(MIGRATION_PROGRESS_PATH, 'r', encoding='utf-8') as f:
-                    progress_data = json.load(f)
-                    logger.info(f"Loaded progress data from {MIGRATION_PROGRESS_PATH}")
-                    
-                    # Filter out already processed movies using the nested structure for IMDb ID
-                    processed_imdb_ids = set(progress_data.get("processed_imdb_ids", []))
-                    if processed_imdb_ids:
-                        original_count = len(movies_to_migrate)
-                        movies_to_migrate = [m for m in movies_to_migrate if (m.get("imdb", {}).get("imdb_id") or m.get("douban", {}).get("imdb_id")) not in processed_imdb_ids]
-                        skipped_count = original_count - len(movies_to_migrate)
-                        logger.info(f"Skipping {skipped_count} already processed movies")
-                        print(f"Skipping {skipped_count} already processed movies from previous batches")
-            except Exception as e:
-                logger.warning(f"Error loading progress data: {e}")
-                progress_data = {"processed_imdb_ids": []}
-        else:
-            progress_data = {"processed_imdb_ids": []}
+        # Wait for all processes to complete
+        for p in processes:
+            p.join()
         
-        # Process movies in smaller batches to recover from browser crashes
-        batch_size = 10  # Process 10 movies before refreshing the browser
+        logger.info("All parallel processes completed")
+        return True
+    
+    # Let the user confirm
+    confirmation = input(f"Ready to rate {len(movies_to_migrate)} movies on IMDb? (y/n): ")
+    if confirmation.lower() != "y":
+        print("Aborting migration")
+        return False
+    
+    # Set up browser
+    browser = setup_browser(headless=False, proxy=PROXY)  # Force visible browser for manual login
+    
+    try:
+        # Login first
+        if not login_to_imdb_manually(browser):
+            logger.error("Failed to log in to IMDb")
+            return False
         
         # Process each movie
-        success_count = 0
-        failure_count = 0
-        processed_count = 0
-        browser = None
+        successful = 0
+        failed = 0
+        skipped = 0
         
-        # Process movies in batches
-        for i in range(0, len(movies_to_migrate), batch_size):
-            batch = movies_to_migrate[i:i+batch_size]
-            logger.info(f"Starting batch {i//batch_size + 1} with {len(batch)} movies")
+        # Use tqdm for progress tracking
+        for movie in tqdm(movies_to_migrate, desc="Rating movies on IMDb"):
+            imdb_id = movie.get("imdb_id")
+            douban_title = movie.get("douban_title", "Unknown Title")
+            douban_rating = movie.get("douban_rating")
             
-            try:
-                # Setup browser for this batch
-                if browser:
-                    try:
-                        browser.quit()
-                    except:
-                        pass
-                
-                browser = setup_browser(headless=False, proxy=PROXY)
-                
-                # Login first
-                if not login_to_imdb_manually(browser):
-                    logger.error("Failed to login to IMDb")
-                    continue  # Try next batch instead of failing completely
-                
-                # Use tqdm for a progress bar
-                for movie in tqdm(batch, desc=f"Rating batch {i//batch_size + 1}"):
-                    processed_count += 1
-                    # Extract movie data from the migration plan structure
-                    douban_movie = movie.get("douban", {})
-                    imdb_movie = movie.get("imdb", {})
-                    
-                    # Get the IMDb ID from the IMDb data or Douban data
-                    imdb_id = imdb_movie.get("imdb_id") or douban_movie.get("imdb_id")
-                    
-                    # Get the rating to apply (already converted to IMDb scale)
-                    rating_to_apply = movie.get("imdb_rating", 0)
-                    
-                    # Get the title from Douban data
-                    title = douban_movie.get("title", "Unknown")
-                    
-                    if not imdb_id or not rating_to_apply:
-                        logger.warning(f"Missing IMDb ID or rating for movie: {title}")
-                        failure_count += 1
-                        continue
-                    
-                    logger.info(f"Processing movie: {title} (IMDb: {imdb_id}, Rating: {rating_to_apply})")
-                    
-                    try:
-                        success = rate_movie_on_imdb(
-                            browser, 
-                            imdb_id, 
-                            rating_to_apply, 
-                            title=title,
-                            test_mode=test_mode
-                        )
-                        
-                        if success:
-                            success_count += 1
-                            # Add to processed list
-                            if imdb_id not in progress_data["processed_imdb_ids"]:
-                                progress_data["processed_imdb_ids"].append(imdb_id)
-                                
-                                # Save progress after each successful rating
-                                try:
-                                    with open(MIGRATION_PROGRESS_PATH, 'w', encoding='utf-8') as f:
-                                        json.dump(progress_data, f, ensure_ascii=False, indent=2)
-                                        f.flush()
-                                        os.fsync(f.fileno())
-                                        logger.info(f"Updated progress file with {len(progress_data['processed_imdb_ids'])} processed movies")
-                                except Exception as e:
-                                    logger.warning(f"Error saving progress data: {e}")
-                        else:
-                            failure_count += 1
-                        
-                        # Random wait between movies to avoid detection
-                        wait_time = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
-                        logger.info(f"Waiting {wait_time:.1f} seconds before next movie...")
-                        time.sleep(wait_time)
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing movie {title}: {e}")
-                        failure_count += 1
+            if not imdb_id or not douban_rating:
+                logger.warning(f"Missing IMDb ID or rating for {douban_title}, skipping")
+                skipped += 1
+                continue
             
-            except Exception as e:
-                logger.error(f"Error during batch processing: {e}")
-                # Continue with next batch
+            logger.info(f"Processing {douban_title} ({imdb_id}) with rating {douban_rating}")
+            
+            # Rate the movie
+            result = rate_movie_on_imdb(
+                browser, 
+                imdb_id, 
+                douban_rating, 
+                title=douban_title,
+                test_mode=test_mode
+            )
+            
+            if result:
+                successful += 1
+                # Add a random delay between movies to avoid being detected as a bot
+                delay = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
+                logger.info(f"Waiting {delay:.1f} seconds before next movie...")
+                time.sleep(delay)
+            else:
+                failed += 1
         
         # Print summary
         print("\n=== Migration Summary ===")
-        print(f"Total processed: {processed_count}")
-        print(f"Successfully rated: {success_count}")
-        print(f"Failed to rate: {failure_count}")
-        print(f"Total rated so far: {len(progress_data['processed_imdb_ids'])}")
-        print(f"Remaining to rate: {total_movies - len(progress_data['processed_imdb_ids'])}")
+        print(f"Successfully rated: {successful}")
+        print(f"Failed to rate: {failed}")
+        print(f"Skipped: {skipped}")
+        print(f"Total processed: {successful + failed + skipped}")
         
-        return success_count > 0
-    
+        return successful > 0
+        
     except Exception as e:
         logger.error(f"Error during migration: {e}")
         return False
     finally:
         # Always close the browser
-        if browser:
-            try:
-                browser.quit()
-            except:
-                pass
+        try:
+            browser.quit()
+        except:
+            pass
 
-def migrate_ratings():
-    """Interactive function to migrate ratings."""
-    print("\n=== Douban to IMDb Rating Migration ===")
+def process_movie_chunk(movies_chunk, process_id, test_mode=False):
+    """Process a chunk of movies in a separate process."""
+    logger.info(f"Process {process_id}: Starting to process {len(movies_chunk)} movies")
     
-    # Create data directory if it doesn't exist
-    ensure_data_dir()
+    # Set up browser
+    browser = setup_browser(headless=False, proxy=PROXY)
     
-    # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler("logs/migration.log"),
-            logging.StreamHandler()
-        ]
-    )
-    
-    while True:
-        print("\nOptions:")
-        print("1. Create migration plan")
-        print("2. Execute migration plan")
-        print("3. Create plan and execute immediately")
-        print("4. Test migration (with debug info)")
-        print("5. Reset batch progress")
-        print("6. View migration progress")
-        print("7. Exit")
+    try:
+        # Login first
+        if not login_to_imdb_manually(browser):
+            logger.error(f"Process {process_id}: Failed to log in to IMDb")
+            return False
         
-        choice = input("\nEnter your choice (1-7): ")
+        # Process each movie
+        successful = 0
+        failed = 0
+        skipped = 0
         
-        if choice == "1":
-            create_migration_plan()
-        elif choice == "2":
-            # Load migration plan
-            logger.info(f"Loading migration plan from {MIGRATION_PLAN_PATH}")
-            migration_plan = load_json(MIGRATION_PLAN_PATH)
-            if migration_plan:
-                max_movies = input("Enter maximum number of movies to process (press Enter for all): ")
-                max_movies = int(max_movies) if max_movies.strip() else None
-                
-                test_mode_input = input("Run in test mode with debugging? (y/n): ")
-                test_mode = test_mode_input.lower() == "y"
-                
-                execute_migration_plan(migration_plan, max_movies=max_movies, test_mode=test_mode)
+        # Use tqdm for progress tracking
+        for movie in tqdm(movies_chunk, desc=f"Process {process_id}: Rating movies"):
+            imdb_id = movie.get("imdb_id")
+            douban_title = movie.get("douban_title", "Unknown Title")
+            douban_rating = movie.get("douban_rating")
+            
+            if not imdb_id or not douban_rating:
+                logger.warning(f"Process {process_id}: Missing IMDb ID or rating for {douban_title}, skipping")
+                skipped += 1
+                continue
+            
+            logger.info(f"Process {process_id}: Processing {douban_title} ({imdb_id}) with rating {douban_rating}")
+            
+            # Rate the movie
+            result = rate_movie_on_imdb(
+                browser, 
+                imdb_id, 
+                douban_rating, 
+                title=douban_title,
+                test_mode=test_mode
+            )
+            
+            if result:
+                successful += 1
+                # Add a random delay between movies to avoid being detected as a bot
+                delay = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
+                logger.info(f"Process {process_id}: Waiting {delay:.1f} seconds before next movie...")
+                time.sleep(delay)
             else:
-                print("Failed to load migration plan. Please create one first.")
-        elif choice == "3":
-            if create_migration_plan():
-                # Load the migration plan
-                logger.info(f"Loading migration plan from {MIGRATION_PLAN_PATH}")
-                migration_plan = load_json(MIGRATION_PLAN_PATH)
-                if migration_plan:
-                    max_movies = input("Enter maximum number of movies to process (press Enter for all): ")
-                    max_movies = int(max_movies) if max_movies.strip() else None
-                    
-                    test_mode_input = input("Run in test mode with debugging? (y/n): ")
-                    test_mode = test_mode_input.lower() == "y"
-                    
-                    execute_migration_plan(migration_plan, max_movies=max_movies, test_mode=test_mode)
-        elif choice == "4":
-            # Test mode
-            logger.info(f"Loading migration plan from {MIGRATION_PLAN_PATH}")
-            migration_plan = load_json(MIGRATION_PLAN_PATH)
-            if migration_plan:
-                max_movies = input("Enter maximum number of movies to test (recommended: 1-3): ")
-                max_movies = int(max_movies) if max_movies.strip() else 1
-                
-                execute_migration_plan(migration_plan, max_movies=max_movies, test_mode=True)
-            else:
-                print("Failed to load migration plan. Please create one first.")
-        elif choice == "5":
-            # Reset batch progress
-            confirmation = input("Are you sure you want to reset all batch progress? This will clear the record of which movies have been processed. (y/n): ")
-            if confirmation.lower() == "y":
-                if os.path.exists(MIGRATION_PROGRESS_PATH):
-                    os.remove(MIGRATION_PROGRESS_PATH)
-                    print("Batch progress has been reset. Next run will start from the beginning.")
-                else:
-                    print("No progress file found.")
-            else:
-                print("Reset cancelled.")
-        elif choice == "6":
-            # View migration progress
-            if os.path.exists(MIGRATION_PROGRESS_PATH):
-                progress_data = load_json(MIGRATION_PROGRESS_PATH)
-                if progress_data and "processed_imdb_ids" in progress_data:
-                    processed_count = len(progress_data["processed_imdb_ids"])
-                    
-                    # Load migration plan to get total count
-                    migration_plan = load_json(MIGRATION_PLAN_PATH)
-                    total_count = len(migration_plan.get("to_migrate", [])) if migration_plan else 0
-                    
-                    print(f"\n=== Migration Progress ===")
-                    print(f"Movies rated so far: {processed_count}")
-                    if total_count > 0:
-                        print(f"Total movies to rate: {total_count}")
-                        print(f"Progress: {processed_count}/{total_count} ({processed_count/total_count*100:.1f}%)")
-                        print(f"Remaining: {total_count - processed_count}")
-                else:
-                    print("Invalid progress data format.")
-            else:
-                print("No progress data found. You haven't started rating movies yet.")
-        elif choice == "7":
-            print("Exiting...")
-            break
-        else:
-            print("Invalid choice. Please try again.")
+                failed += 1
+        
+        # Print summary
+        print(f"\n=== Process {process_id} Migration Summary ===")
+        print(f"Successfully rated: {successful}")
+        print(f"Failed to rate: {failed}")
+        print(f"Skipped: {skipped}")
+        print(f"Total processed: {successful + failed + skipped}")
+        
+        return successful > 0
+        
+    except Exception as e:
+        logger.error(f"Process {process_id}: Error during migration: {e}")
+        return False
+    finally:
+        # Always close the browser
+        try:
+            browser.quit()
+        except:
+            pass
 
 if __name__ == "__main__":
     # Create argument parser
@@ -1206,6 +1130,7 @@ if __name__ == "__main__":
     parser.add_argument("--test-mode", action="store_true", help="Run in test mode with additional debug info")
     parser.add_argument("--speed-mode", action="store_true", help="Run in speed mode (disable images for faster loading)")
     parser.add_argument("--headless", action="store_true", help="Run browser in headless mode")
+    parser.add_argument("--parallel", action="store_true", help="Run migration in parallel mode with multiple processes")
     parser.add_argument("--proxy", type=str, help="Use proxy server (format: http://user:pass@host:port)")
     parser.add_argument("--timeout", type=int, help="Connection timeout in seconds (default: 90)")
     parser.add_argument("--retries", type=int, help="Maximum number of retries (default: 5)")
@@ -1236,7 +1161,7 @@ if __name__ == "__main__":
             logger.info(f"Loading migration plan from {MIGRATION_PLAN_PATH}")
             migration_plan = load_json(MIGRATION_PLAN_PATH)
             if migration_plan:
-                execute_migration_plan(migration_plan, max_movies=args.max_movies, test_mode=args.test_mode)
+                execute_migration_plan(migration_plan, max_movies=args.max_movies, test_mode=args.test_mode, parallel=args.parallel)
             else:
                 logger.error("Failed to load migration plan")
     elif args.create_plan:
@@ -1247,8 +1172,8 @@ if __name__ == "__main__":
         migration_plan = load_json(MIGRATION_PLAN_PATH)
         if migration_plan:
             logger.info(f"Found {len(migration_plan.get('to_migrate', []))} movies to rate on IMDb")
-            execute_migration_plan(migration_plan, max_movies=args.max_movies, test_mode=args.test_mode)
+            execute_migration_plan(migration_plan, max_movies=args.max_movies, test_mode=args.test_mode, parallel=args.parallel)
         else:
             logger.error("Failed to load migration plan")
     else:
-        migrate_ratings() 
+        migrate_ratings()

@@ -32,7 +32,53 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 
-# Output path
+# Configuration
+DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() in ("true", "1", "yes")
+SPEED_MODE = os.getenv("SPEED_MODE", "fastest").lower()
+
+# Derive settings from speed mode
+if SPEED_MODE == "fastest":
+    THROTTLING_ENABLED = False
+    FAST_MODE = True
+    MIN_PAGE_DELAY = 0.0
+    MAX_PAGE_DELAY = 0.2
+    MIN_MOVIE_DELAY = 0.0
+    MAX_MOVIE_DELAY = 0.2
+    DETECTED_RETRY_DELAY = 5
+elif SPEED_MODE == "balanced":
+    THROTTLING_ENABLED = True
+    FAST_MODE = True
+    MIN_PAGE_DELAY = 0.5
+    MAX_PAGE_DELAY = 1.0
+    MIN_MOVIE_DELAY = 0.2
+    MAX_MOVIE_DELAY = 0.5
+    DETECTED_RETRY_DELAY = 20
+elif SPEED_MODE == "cautious":
+    THROTTLING_ENABLED = True
+    FAST_MODE = False
+    MIN_PAGE_DELAY = 1.0
+    MAX_PAGE_DELAY = 2.0
+    MIN_MOVIE_DELAY = 0.5
+    MAX_MOVIE_DELAY = 1.0
+    DETECTED_RETRY_DELAY = 60
+else:
+    # Default to fastest if unrecognized mode
+    THROTTLING_ENABLED = False
+    FAST_MODE = True
+    MIN_PAGE_DELAY = 0.0
+    MAX_PAGE_DELAY = 0.2
+    MIN_MOVIE_DELAY = 0.0
+    MAX_MOVIE_DELAY = 0.2
+    DETECTED_RETRY_DELAY = 5
+
+# Allow overriding individual settings from environment variables
+MIN_PAGE_DELAY = float(os.getenv("MIN_PAGE_DELAY", MIN_PAGE_DELAY))
+MAX_PAGE_DELAY = float(os.getenv("MAX_PAGE_DELAY", MAX_PAGE_DELAY))
+MIN_MOVIE_DELAY = float(os.getenv("MIN_MOVIE_DELAY", MIN_MOVIE_DELAY))
+MAX_MOVIE_DELAY = float(os.getenv("MAX_MOVIE_DELAY", MAX_MOVIE_DELAY))
+DETECTED_RETRY_DELAY = int(os.getenv("DETECTED_RETRY_DELAY", DETECTED_RETRY_DELAY))
+
+# Paths
 DOUBAN_EXPORT_PATH = os.getenv("DOUBAN_EXPORT_PATH", "data/douban_ratings.json")
 
 # Thread-safe lock for appending to ratings
@@ -47,17 +93,6 @@ detection_counter = 0
 
 # Directory for saving detection pages for later processing
 DETECTION_PAGES_DIR = "debug_logs/detection_pages"
-
-# Add throttling control - now disabled by default for speed
-THROTTLING_ENABLED = False  # Changed from True to False
-MIN_PAGE_DELAY = 0.0  # Reduced to 0.0 for maximum speed
-MAX_PAGE_DELAY = 0.2  # Reduced to 0.2 for maximum speed
-MIN_MOVIE_DELAY = 0.0  # Reduced to 0.0 for maximum speed
-MAX_MOVIE_DELAY = 0.2  # Reduced to 0.2 for maximum speed
-DETECTED_RETRY_DELAY = 5    # Drastically reduced from 120 to 5
-
-# Fast mode disables most file saving operations for speed
-FAST_MODE = True
 
 # New settings for timeout handling
 PAGE_LOAD_TIMEOUT = 30  # Increased from 15 to 30 seconds
