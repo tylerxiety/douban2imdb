@@ -10,14 +10,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Ensure logs directory exists
-Path("logs").mkdir(exist_ok=True)
+Path("../logs").mkdir(exist_ok=True)
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join("logs", "douban2imdb.log")),
+        logging.FileHandler(os.path.join("../logs", "douban2imdb.log")),
         logging.StreamHandler()
     ]
 )
@@ -28,11 +28,12 @@ load_dotenv()
 
 def ensure_data_dir():
     """Ensure the data directory exists."""
-    Path("data").mkdir(exist_ok=True)
+    Path("../data").mkdir(exist_ok=True)
     
     # Also ensure logs directories exist
-    Path("logs").mkdir(exist_ok=True)
-    Path("debug_logs").mkdir(exist_ok=True)
+    Path("../logs").mkdir(exist_ok=True)
+    Path("../debug_logs").mkdir(exist_ok=True)
+    Path("../debug_logs/screenshots").mkdir(exist_ok=True)
 
 def save_json(data, filepath):
     """Save data to a JSON file."""

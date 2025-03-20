@@ -23,11 +23,15 @@ from utils import ensure_data_dir, save_json, logger
 # Load environment variables
 load_dotenv()
 
-# Output paths
+# Initialize constants from environment variables or defaults
 IMDB_EXPORT_PATH = os.getenv("IMDB_EXPORT_PATH", "data/imdb_ratings.json")
-DEBUG_DIR = "debug_logs"
+DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() == "true"
+DRIVER_PATH = os.getenv("DRIVER_PATH", "") 
+BROWSER_MAX_INIT_ATTEMPTS = int(os.getenv("BROWSER_MAX_INIT_ATTEMPTS", "3"))
+HEADLESS_MODE = os.getenv("HEADLESS_MODE", "False").lower() == "true"
+DEBUG_DIR = "../debug_logs"
 
-# Ensure debug directory exists
+# Ensure the debug directory exists
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
 def get_debug_filepath(prefix, file_type="html"):

@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 import threading
 import urllib.parse
 import difflib
+import subprocess
+from datetime import datetime
 
 # Handle both import cases
 try:
@@ -92,7 +94,7 @@ DEBUG_MOVIE_LIMIT = 10
 detection_counter = 0
 
 # Directory for saving detection pages for later processing
-DETECTION_PAGES_DIR = "debug_logs/detection_pages"
+DETECTION_PAGES_DIR = "../debug_logs/detection_pages"
 
 # New settings for timeout handling
 PAGE_LOAD_TIMEOUT = 30  # Increased from 15 to 30 seconds
@@ -169,7 +171,7 @@ def setup_browser(headless=False, attempt=1):
             chrome_options.add_argument(f"--window-size={chosen_res[0]},{chosen_res[1]}")
         
         # Create diagnostic directory if needed
-        os.makedirs("debug_logs", exist_ok=True)
+        os.makedirs("../debug_logs", exist_ok=True)
         
         # Log Chrome version
         import subprocess
@@ -177,7 +179,7 @@ def setup_browser(headless=False, attempt=1):
             chrome_version_cmd = 'google-chrome --version' if os.name == 'posix' else 'reg query "HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon" /v version'
             chrome_version = subprocess.check_output(chrome_version_cmd, shell=True).decode().strip()
             print(f"Chrome version: {chrome_version}")
-            with open(os.path.join("debug_logs", "chrome_version.txt"), "w") as f:
+            with open(os.path.join("../debug_logs", "chrome_version.txt"), "w") as f:
                 f.write(f"Chrome version: {chrome_version}\n")
                 f.write(f"Options: {str(chrome_options.arguments)}\n")
         except:
@@ -213,7 +215,7 @@ def setup_browser(headless=False, attempt=1):
         logger.error(f"Browser initialization failed: {e}")
         
         # Save error information for debugging
-        with open(os.path.join("debug_logs", f"browser_init_error_{attempt}.txt"), "w") as f:
+        with open(os.path.join("../debug_logs", f"browser_init_error_{attempt}.txt"), "w") as f:
             f.write(f"Error: {str(e)}\n")
         
         # Try to quit the browser if it exists but failed
@@ -570,7 +572,7 @@ def save_debug_movie_html(browser, douban_id, title=None):
     if debug_movie_counter < DEBUG_MOVIE_LIMIT:
         try:
             # Ensure the debug directory exists
-            debug_dir = "debug_logs/movie_pages"
+            debug_dir = "../debug_logs/movie_pages"
             os.makedirs(debug_dir, exist_ok=True)
             
             # Create a filename with timestamp, douban id and truncated title
@@ -1087,8 +1089,8 @@ def fetch_movie_ratings(browser, user_id, include_details=False, use_efficient_m
             # Save HTML for debugging on empty pages to diagnose the issue
             if not FAST_MODE or consecutive_empty_pages > 0:
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                os.makedirs("debug_logs", exist_ok=True)
-                log_path = os.path.join("debug_logs", f"douban_ratings_page_{page}_{timestamp}.html")
+                os.makedirs("../debug_logs", exist_ok=True)
+                log_path = os.path.join("../debug_logs", f"douban_ratings_page_{page}_{timestamp}.html")
                 with open(log_path, "w", encoding="utf-8") as f:
                     f.write(browser.page_source)
                 print(f"Saved page HTML for debugging")
@@ -1145,7 +1147,7 @@ def fetch_movie_ratings(browser, user_id, include_details=False, use_efficient_m
                 
                 # Save more detailed debug info for empty pages
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                debug_path = os.path.join("debug_logs", f"empty_page_{page}_{timestamp}.html")
+                debug_path = os.path.join("../debug_logs", f"empty_page_{page}_{timestamp}.html")
                 with open(debug_path, "w", encoding="utf-8") as f:
                     f.write(browser.page_source)
                 print(f"Saved empty page HTML for detailed analysis")
@@ -1478,13 +1480,13 @@ def check_for_detection(browser):
         for phrase in detection_phrases:
             if phrase in page_text:
                 # Save a screenshot of the detection page
-                os.makedirs("debug_logs/screenshots", exist_ok=True)
+                os.makedirs("../debug_logs/screenshots", exist_ok=True)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                screenshot_path = os.path.join("debug_logs/screenshots", f"detection_{timestamp}.png")
+                screenshot_path = os.path.join("../debug_logs/screenshots", f"detection_{timestamp}.png")
                 browser.save_screenshot(screenshot_path)
                 
                 # Save the HTML content
-                html_path = os.path.join("debug_logs", f"detection_{timestamp}.html")
+                html_path = os.path.join("../debug_logs", f"detection_{timestamp}.html")
                 with open(html_path, "w", encoding="utf-8") as f:
                     f.write(page_text)
                 
@@ -1529,9 +1531,9 @@ def handle_captcha(browser):
     """Handle captcha/verification by prompting user for manual intervention."""
     try:
         # Save a screenshot for reference
-        os.makedirs("debug_logs/screenshots", exist_ok=True)
+        os.makedirs("../debug_logs/screenshots", exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        screenshot_path = os.path.join("debug_logs/screenshots", f"captcha_{timestamp}.png")
+        screenshot_path = os.path.join("../debug_logs/screenshots", f"captcha_{timestamp}.png")
         browser.save_screenshot(screenshot_path)
         
         print("\n" + "="*60)
@@ -1856,7 +1858,7 @@ def export_douban_ratings():
     
     # Create necessary directories
     os.makedirs(DETECTION_PAGES_DIR, exist_ok=True)
-    os.makedirs("debug_logs", exist_ok=True)
+    os.makedirs("../debug_logs", exist_ok=True)
     
     browser = None
     try:

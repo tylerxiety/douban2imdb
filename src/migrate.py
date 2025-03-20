@@ -354,21 +354,21 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
         
         # Take screenshot in test mode
         if test_mode:
-            os.makedirs("debug_logs/screenshots", exist_ok=True)
-            screenshot_path = f"debug_logs/screenshots/{imdb_id}.png"
+            os.makedirs("../debug_logs/screenshots", exist_ok=True)
+            screenshot_path = f"../debug_logs/screenshots/{imdb_id}.png"
             browser.save_screenshot(screenshot_path)
             print(f"Screenshot saved to {screenshot_path}")
             
             # In test mode, save the page source for debugging
-            with open(f"debug_logs/screenshots/{imdb_id}_page_source.html", "w", encoding="utf-8") as f:
+            with open(f"../debug_logs/screenshots/{imdb_id}_page_source.html", "w", encoding="utf-8") as f:
                 f.write(browser.page_source)
-            print(f"Page source saved to debug_logs/screenshots/{imdb_id}_page_source.html")
+            print(f"Page source saved to ../debug_logs/screenshots/{imdb_id}_page_source.html")
             
             # Ask if user wants to highlight potential rating elements
             highlight_choice = input("Would you like to highlight potential rating elements for debugging? (y/n): ")
             if highlight_choice.lower() == 'y':
                 highlighted_elements = highlight_potential_rating_elements(browser, rating)
-                screenshot_path = f"debug_logs/screenshots/{imdb_id}_highlighted.png"
+                screenshot_path = f"../debug_logs/screenshots/{imdb_id}_highlighted.png"
                 browser.save_screenshot(screenshot_path)
                 print(f"Screenshot with highlighted elements saved to {screenshot_path}")
                 
@@ -390,7 +390,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                             browser.execute_script("arguments[0].click();", selected_element)
                             print(f"Clicked element {element_choice}")
                             time.sleep(2)
-                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_manual_click.png")
+                            browser.save_screenshot(f"../debug_logs/screenshots/{imdb_id}_after_manual_click.png")
                             return True
                         except Exception as e:
                             print(f"Failed to click element: {e}")
@@ -473,7 +473,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 # Take screenshot of the rate button in test mode
                 if test_mode:
-                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_rate_button.png"
+                    screenshot_path = f"../debug_logs/screenshots/{imdb_id}_rate_button.png"
                     browser.save_screenshot(screenshot_path)
                     print(f"Rate button screenshot saved to {screenshot_path}")
                     
@@ -566,7 +566,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 # Take screenshot before clicking in test mode
                 if test_mode:
-                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_before_rating.png"
+                    screenshot_path = f"../debug_logs/screenshots/{imdb_id}_before_rating.png"
                     browser.save_screenshot(screenshot_path)
                 
                 # Special handling for IMDb touch overlay
@@ -715,7 +715,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                                 print(f"Button {i+1}: Text='{btn_text}', HTML={btn_html[:100]}...")
                             
                             # Save dialog screenshot
-                            screenshot_path = f"debug_logs/screenshots/{imdb_id}_rating_dialog.png"
+                            screenshot_path = f"../debug_logs/screenshots/{imdb_id}_rating_dialog.png"
                             browser.save_screenshot(screenshot_path)
                             print(f"Rating dialog screenshot saved to {screenshot_path}")
                         except Exception as e:
@@ -809,7 +809,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                             print("Clicked at likely Rate button position in dialog")
                             
                             if test_mode:
-                                browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_position_click.png")
+                                browser.save_screenshot(f"../debug_logs/screenshots/{imdb_id}_after_position_click.png")
                                 print("Screenshot saved after position click")
                         except Exception as e:
                             print(f"Position-based click failed: {e}")
@@ -822,7 +822,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                         
                         if test_mode:
                             print(f"Rate button: {rate_confirm_button.get_attribute('outerHTML')}")
-                            screenshot_path = f"debug_logs/screenshots/{imdb_id}_rate_confirm_button.png"
+                            screenshot_path = f"../debug_logs/screenshots/{imdb_id}_rate_confirm_button.png"
                             browser.save_screenshot(screenshot_path)
                         
                         try:
@@ -853,7 +853,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                         print("Rate confirmation button not found - the rating may or may not be saved")
                         if test_mode:
                             # For debugging, save a screenshot to see what's available
-                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_rate_button_not_found.png")
+                            browser.save_screenshot(f"../debug_logs/screenshots/{imdb_id}_rate_button_not_found.png")
                             print("Screenshot saved for debugging the missing Rate button")
                 except Exception as e:
                     print(f"Error finding or handling the Rate confirmation button: {e}")
@@ -862,7 +862,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 # Take another screenshot after rating in test mode
                 if test_mode:
-                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_after_rating.png"
+                    screenshot_path = f"../debug_logs/screenshots/{imdb_id}_after_rating.png"
                     browser.save_screenshot(screenshot_path)
                     print(f"After-rating screenshot saved to {screenshot_path}")
                 
@@ -905,7 +905,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                     else:
                         print(f"Failed to confirm rating after {RATING_CONFIRMATION_RETRIES} attempts")
                         if test_mode:
-                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_no_confirmation.png")
+                            browser.save_screenshot(f"../debug_logs/screenshots/{imdb_id}_no_confirmation.png")
                             print(f"Screenshot saved for debugging the missing confirmation")
                         return False
                 
@@ -921,7 +921,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                         try:
                             containers[0].click()
                             time.sleep(1)
-                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_container_click.png")
+                            browser.save_screenshot(f"../debug_logs/screenshots/{imdb_id}_after_container_click.png")
                             print("Clicked container, check screenshot to see if stars appeared")
                         except:
                             print("Failed to click container")
@@ -1099,7 +1099,7 @@ def migrate_ratings():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler("logs/migration.log"),
+            logging.FileHandler("../logs/migration.log"),
             logging.StreamHandler()
         ]
     )
