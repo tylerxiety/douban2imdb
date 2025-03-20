@@ -35,6 +35,8 @@ SPEED_MODE = True  # Set to True to disable images for faster loading
 CONNECTION_TIMEOUT = 90  # Seconds to wait for connections before timeout
 WAIT_BETWEEN_MOVIES = (0.5, 1)  # Further reduced wait between movies for faster processing
 PROXY = os.getenv("PROXY", None)  # Proxy in format http://user:pass@host:port
+RATING_CONFIRMATION_RETRIES = int(os.getenv("RATING_CONFIRMATION_RETRIES", "3"))  # Number of retries for rating confirmation
+RATING_CONFIRMATION_WAIT = int(os.getenv("RATING_CONFIRMATION_WAIT", "10"))  # Seconds to wait for rating confirmation
 
 def setup_browser(headless=False, proxy=None):
     """Set up and return a browser for automation."""
@@ -352,21 +354,21 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
         
         # Take screenshot in test mode
         if test_mode:
-            os.makedirs("data/screenshots", exist_ok=True)
-            screenshot_path = f"data/screenshots/{imdb_id}.png"
+            os.makedirs("debug_logs/screenshots", exist_ok=True)
+            screenshot_path = f"debug_logs/screenshots/{imdb_id}.png"
             browser.save_screenshot(screenshot_path)
             print(f"Screenshot saved to {screenshot_path}")
             
             # In test mode, save the page source for debugging
-            with open(f"data/screenshots/{imdb_id}_page_source.html", "w", encoding="utf-8") as f:
+            with open(f"debug_logs/screenshots/{imdb_id}_page_source.html", "w", encoding="utf-8") as f:
                 f.write(browser.page_source)
-            print(f"Page source saved to data/screenshots/{imdb_id}_page_source.html")
+            print(f"Page source saved to debug_logs/screenshots/{imdb_id}_page_source.html")
             
             # Ask if user wants to highlight potential rating elements
             highlight_choice = input("Would you like to highlight potential rating elements for debugging? (y/n): ")
             if highlight_choice.lower() == 'y':
                 highlighted_elements = highlight_potential_rating_elements(browser, rating)
-                screenshot_path = f"data/screenshots/{imdb_id}_highlighted.png"
+                screenshot_path = f"debug_logs/screenshots/{imdb_id}_highlighted.png"
                 browser.save_screenshot(screenshot_path)
                 print(f"Screenshot with highlighted elements saved to {screenshot_path}")
                 
@@ -388,7 +390,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                             browser.execute_script("arguments[0].click();", selected_element)
                             print(f"Clicked element {element_choice}")
                             time.sleep(2)
-                            browser.save_screenshot(f"data/screenshots/{imdb_id}_after_manual_click.png")
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_manual_click.png")
                             return True
                         except Exception as e:
                             print(f"Failed to click element: {e}")
@@ -471,7 +473,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 # Take screenshot of the rate button in test mode
                 if test_mode:
-                    screenshot_path = f"data/screenshots/{imdb_id}_rate_button.png"
+                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_rate_button.png"
                     browser.save_screenshot(screenshot_path)
                     print(f"Rate button screenshot saved to {screenshot_path}")
                     
@@ -564,7 +566,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 # Take screenshot before clicking in test mode
                 if test_mode:
-                    screenshot_path = f"data/screenshots/{imdb_id}_before_rating.png"
+                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_before_rating.png"
                     browser.save_screenshot(screenshot_path)
                 
                 # Special handling for IMDb touch overlay
@@ -713,7 +715,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                                 print(f"Button {i+1}: Text='{btn_text}', HTML={btn_html[:100]}...")
                             
                             # Save dialog screenshot
-                            screenshot_path = f"data/screenshots/{imdb_id}_rating_dialog.png"
+                            screenshot_path = f"debug_logs/screenshots/{imdb_id}_rating_dialog.png"
                             browser.save_screenshot(screenshot_path)
                             print(f"Rating dialog screenshot saved to {screenshot_path}")
                         except Exception as e:
@@ -807,7 +809,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                             print("Clicked at likely Rate button position in dialog")
                             
                             if test_mode:
-                                browser.save_screenshot(f"data/screenshots/{imdb_id}_after_position_click.png")
+                                browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_position_click.png")
                                 print("Screenshot saved after position click")
                         except Exception as e:
                             print(f"Position-based click failed: {e}")
@@ -820,7 +822,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                         
                         if test_mode:
                             print(f"Rate button: {rate_confirm_button.get_attribute('outerHTML')}")
-                            screenshot_path = f"data/screenshots/{imdb_id}_rate_confirm_button.png"
+                            screenshot_path = f"debug_logs/screenshots/{imdb_id}_rate_confirm_button.png"
                             browser.save_screenshot(screenshot_path)
                         
                         try:
@@ -851,7 +853,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                         print("Rate confirmation button not found - the rating may or may not be saved")
                         if test_mode:
                             # For debugging, save a screenshot to see what's available
-                            browser.save_screenshot(f"data/screenshots/{imdb_id}_rate_button_not_found.png")
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_rate_button_not_found.png")
                             print("Screenshot saved for debugging the missing Rate button")
                 except Exception as e:
                     print(f"Error finding or handling the Rate confirmation button: {e}")
@@ -860,7 +862,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 # Take another screenshot after rating in test mode
                 if test_mode:
-                    screenshot_path = f"data/screenshots/{imdb_id}_after_rating.png"
+                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_after_rating.png"
                     browser.save_screenshot(screenshot_path)
                     print(f"After-rating screenshot saved to {screenshot_path}")
                 
@@ -873,6 +875,9 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                     ".ipl-rating-star__rating",
                     ".UserRatingButton__rating"
                 ]
+                
+                # Wait longer for confirmation to appear
+                time.sleep(RATING_CONFIRMATION_WAIT)
                 
                 confirmation_found = False
                 for selector in confirmation_selectors:
@@ -893,9 +898,16 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 
                 if not confirmation_found:
                     print("No explicit rating confirmation found")
-                    choice = input("Press Enter if the rating was successful, or type 'retry' to try again: ")
-                    if choice.lower() == 'retry':
-                        return rate_movie_on_imdb(browser, imdb_id, rating, title, 0, test_mode)
+                    if retry_count < RATING_CONFIRMATION_RETRIES:
+                        print(f"Automatically retrying rating (attempt {retry_count + 1}/{RATING_CONFIRMATION_RETRIES})")
+                        time.sleep(2)  # Wait before retry
+                        return rate_movie_on_imdb(browser, imdb_id, rating, title, retry_count + 1, test_mode)
+                    else:
+                        print(f"Failed to confirm rating after {RATING_CONFIRMATION_RETRIES} attempts")
+                        if test_mode:
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_no_confirmation.png")
+                            print(f"Screenshot saved for debugging the missing confirmation")
+                        return False
                 
                 return True
                 
@@ -909,7 +921,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                         try:
                             containers[0].click()
                             time.sleep(1)
-                            browser.save_screenshot(f"data/screenshots/{imdb_id}_after_container_click.png")
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_container_click.png")
                             print("Clicked container, check screenshot to see if stars appeared")
                         except:
                             print("Failed to click container")
@@ -977,97 +989,82 @@ def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
         else:
             progress_data = {"processed_imdb_ids": []}
         
-        # Process movies in smaller batches to recover from browser crashes
-        batch_size = 10  # Process 10 movies before refreshing the browser
-        
         # Process each movie
         success_count = 0
         failure_count = 0
         processed_count = 0
         browser = None
         
-        # Process movies in batches
-        for i in range(0, len(movies_to_migrate), batch_size):
-            batch = movies_to_migrate[i:i+batch_size]
-            logger.info(f"Starting batch {i//batch_size + 1} with {len(batch)} movies")
+        try:
+            # Setup browser once for all movies
+            browser = setup_browser(headless=False, proxy=PROXY)
             
-            try:
-                # Setup browser for this batch
-                if browser:
-                    try:
-                        browser.quit()
-                    except:
-                        pass
-                
-                browser = setup_browser(headless=False, proxy=PROXY)
-                
-                # Login first
-                if not login_to_imdb_manually(browser):
-                    logger.error("Failed to login to IMDb")
-                    continue  # Try next batch instead of failing completely
-                
-                # Use tqdm for a progress bar
-                for movie in tqdm(batch, desc=f"Rating batch {i//batch_size + 1}"):
-                    processed_count += 1
-                    # Extract movie data from the migration plan structure
-                    douban_movie = movie.get("douban", {})
-                    imdb_movie = movie.get("imdb", {})
-                    
-                    # Get the IMDb ID from the IMDb data or Douban data
-                    imdb_id = imdb_movie.get("imdb_id") or douban_movie.get("imdb_id")
-                    
-                    # Get the rating to apply (already converted to IMDb scale)
-                    rating_to_apply = movie.get("imdb_rating", 0)
-                    
-                    # Get the title from Douban data
-                    title = douban_movie.get("title", "Unknown")
-                    
-                    if not imdb_id or not rating_to_apply:
-                        logger.warning(f"Missing IMDb ID or rating for movie: {title}")
-                        failure_count += 1
-                        continue
-                    
-                    logger.info(f"Processing movie: {title} (IMDb: {imdb_id}, Rating: {rating_to_apply})")
-                    
-                    try:
-                        success = rate_movie_on_imdb(
-                            browser, 
-                            imdb_id, 
-                            rating_to_apply, 
-                            title=title,
-                            test_mode=test_mode
-                        )
-                        
-                        if success:
-                            success_count += 1
-                            # Add to processed list
-                            if imdb_id not in progress_data["processed_imdb_ids"]:
-                                progress_data["processed_imdb_ids"].append(imdb_id)
-                                
-                                # Save progress after each successful rating
-                                try:
-                                    with open(MIGRATION_PROGRESS_PATH, 'w', encoding='utf-8') as f:
-                                        json.dump(progress_data, f, ensure_ascii=False, indent=2)
-                                        f.flush()
-                                        os.fsync(f.fileno())
-                                        logger.info(f"Updated progress file with {len(progress_data['processed_imdb_ids'])} processed movies")
-                                except Exception as e:
-                                    logger.warning(f"Error saving progress data: {e}")
-                        else:
-                            failure_count += 1
-                        
-                        # Random wait between movies to avoid detection
-                        wait_time = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
-                        logger.info(f"Waiting {wait_time:.1f} seconds before next movie...")
-                        time.sleep(wait_time)
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing movie {title}: {e}")
-                        failure_count += 1
+            # Login first
+            if not login_to_imdb_manually(browser):
+                logger.error("Failed to login to IMDb")
+                return False
             
-            except Exception as e:
-                logger.error(f"Error during batch processing: {e}")
-                # Continue with next batch
+            # Use tqdm for a progress bar
+            for movie in tqdm(movies_to_migrate, desc=f"Rating movies"):
+                processed_count += 1
+                # Extract movie data from the migration plan structure
+                douban_movie = movie.get("douban", {})
+                imdb_movie = movie.get("imdb", {})
+                
+                # Get the IMDb ID from the IMDb data or Douban data
+                imdb_id = imdb_movie.get("imdb_id") or douban_movie.get("imdb_id")
+                
+                # Get the rating to apply (already converted to IMDb scale)
+                rating_to_apply = movie.get("imdb_rating", 0)
+                
+                # Get the title from Douban data
+                title = douban_movie.get("title", "Unknown")
+                
+                if not imdb_id or not rating_to_apply:
+                    logger.warning(f"Missing IMDb ID or rating for movie: {title}")
+                    failure_count += 1
+                    continue
+                
+                logger.info(f"Processing movie: {title} (IMDb: {imdb_id}, Rating: {rating_to_apply})")
+                
+                try:
+                    success = rate_movie_on_imdb(
+                        browser, 
+                        imdb_id, 
+                        rating_to_apply, 
+                        title=title,
+                        test_mode=test_mode
+                    )
+                    
+                    if success:
+                        success_count += 1
+                        # Add to processed list
+                        if imdb_id not in progress_data["processed_imdb_ids"]:
+                            progress_data["processed_imdb_ids"].append(imdb_id)
+                            
+                            # Save progress after each successful rating
+                            try:
+                                with open(MIGRATION_PROGRESS_PATH, 'w', encoding='utf-8') as f:
+                                    json.dump(progress_data, f, ensure_ascii=False, indent=2)
+                                    f.flush()
+                                    os.fsync(f.fileno())
+                                    logger.info(f"Updated progress file with {len(progress_data['processed_imdb_ids'])} processed movies")
+                            except Exception as e:
+                                logger.warning(f"Error saving progress data: {e}")
+                    else:
+                        failure_count += 1
+                    
+                    # Random wait between movies to avoid detection
+                    wait_time = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
+                    logger.info(f"Waiting {wait_time:.1f} seconds before next movie...")
+                    time.sleep(wait_time)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing movie {title}: {e}")
+                    failure_count += 1
+        
+        except Exception as e:
+            logger.error(f"Error during processing: {e}")
         
         # Print summary
         print("\n=== Migration Summary ===")
