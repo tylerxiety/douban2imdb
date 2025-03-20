@@ -35,6 +35,8 @@ SPEED_MODE = True  # Set to True to disable images for faster loading
 CONNECTION_TIMEOUT = 90  # Seconds to wait for connections before timeout
 WAIT_BETWEEN_MOVIES = (0.5, 1)  # Further reduced wait between movies for faster processing
 PROXY = os.getenv("PROXY", None)  # Proxy in format http://user:pass@host:port
+RATING_CONFIRMATION_RETRIES = int(os.getenv("RATING_CONFIRMATION_RETRIES", "3"))  # Number of retries for rating confirmation
+RATING_CONFIRMATION_WAIT = int(os.getenv("RATING_CONFIRMATION_WAIT", "10"))  # Seconds to wait for rating confirmation
 
 def setup_browser(headless=False, proxy=None):
     """Set up and return a browser for automation."""
@@ -329,132 +331,623 @@ def highlight_potential_rating_elements(browser, rating):
     print(f"Highlighted {len(highlighted_elements)} potential rating elements")
     return highlighted_elements
 
-def rate_movie_on_imdb(browser, imdb_id, rating, title="", retry_count=0, max_retries=3):
-    """Rate a movie on IMDb with up to 3 retry attempts."""
+def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test_mode=False):
+    """Rate a movie on IMDb with retry logic and user assistance when needed."""
     try:
-        # Access the movie page
+        # First access the movie page
         if not access_movie_page_by_id(browser, imdb_id):
             logger.error(f"Could not access movie page for {imdb_id}")
             return False
         
-        # Wait for the page to load
-        try:
-            WebDriverWait(browser, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "h1[data-testid='hero__pageTitle']"))
-            )
-        except:
-            logger.warning(f"Title element not found for {imdb_id}, but continuing anyway")
-        
-        # Get the movie title from the page if available
-        try:
-            page_title = browser.find_element(By.CSS_SELECTOR, "h1[data-testid='hero__pageTitle']").text
-            logger.info(f"Found movie: {page_title}")
-        except:
-            page_title = title
-            logger.warning(f"Could not get title from page, using provided title: {title}")
-        
-        # Find and click the rate button
-        try:
-            # Try to find the rate button
-            rate_button = None
-            
-            # First try the "Rate" button if not already rated
+        # Get title from page if not provided
+        if not title:
             try:
-                rate_button = browser.find_element(By.CSS_SELECTOR, "button[data-testid='hero-rating-bar__rate-button']")
-            except:
-                pass
-            
-            # If not found, try to find the "Your Rating" element (already rated)
-            if not rate_button:
-                try:
-                    your_rating = browser.find_element(By.CSS_SELECTOR, "div[data-testid='hero-rating-bar__user-rating']")
-                    logger.info(f"Movie {imdb_id} ({page_title}) is already rated")
-                    
-                    # Skip already rated movies without asking
-                    logger.info(f"Skipping already rated movie: {page_title}")
-                    return True
-                except:
-                    logger.warning("Could not find rate button or existing rating")
-                    return False
-            else:
-                # Click the rate button
-                rate_button.click()
-        except Exception as e:
-            logger.error(f"Error finding or clicking rate button: {e}")
-            return False
-        
-        # Wait for the rating popup
-        try:
-            WebDriverWait(browser, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-testid='starbar']"))
-            )
-        except:
-            logger.error("Rating popup did not appear")
-            return False
-        
-        # Find and click the appropriate star
-        try:
-            # Convert rating to an integer between 1-10
-            rating_int = int(float(rating))
-            if rating_int < 1:
-                rating_int = 1
-            elif rating_int > 10:
-                rating_int = 10
-            
-            # Find all star elements
-            stars = browser.find_elements(By.CSS_SELECTOR, "button[data-testid^='starbar-rating-']")
-            
-            if not stars or len(stars) < 10:
-                logger.error(f"Could not find rating stars (found {len(stars) if stars else 0})")
-                return False
-            
-            # Click the appropriate star (stars are 1-indexed)
-            stars[rating_int - 1].click()
-            logger.info(f"Selected rating {rating_int} for {page_title}")
-            
-            # Wait for rating to be submitted
-            time.sleep(1)
-            
-            # Look for confirmation
-            confirmation_found = False
-            try:
-                # Wait for the "Your rating" text to appear
-                WebDriverWait(browser, 5).until(
-                    EC.presence_of_element_located((By.XPATH, "//div[contains(text(), 'Your rating')]"))
+                title_element = WebDriverWait(browser, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1, .title-overview h1, .TitleHeader__TitleText"))
                 )
-                confirmation_found = True
+                title = title_element.text
             except:
-                logger.warning("No explicit rating confirmation found")
+                title = browser.title.split(" - IMDb")[0] if " - IMDb" in browser.title else browser.title
+        
+        title_text = title or f"Movie {imdb_id}"
+        print(f"\nRating {title_text} ({imdb_id}) as {rating}/10")
+        
+        # Take screenshot in test mode
+        if test_mode:
+            os.makedirs("debug_logs/screenshots", exist_ok=True)
+            screenshot_path = f"debug_logs/screenshots/{imdb_id}.png"
+            browser.save_screenshot(screenshot_path)
+            print(f"Screenshot saved to {screenshot_path}")
             
-            # If no confirmation, retry up to max_retries times
-            if not confirmation_found:
-                if retry_count < max_retries:
-                    retry_count += 1
-                    logger.warning(f"No explicit rating confirmation found, automatically retrying... (Attempt {retry_count} of {max_retries})")
+            # In test mode, save the page source for debugging
+            with open(f"debug_logs/screenshots/{imdb_id}_page_source.html", "w", encoding="utf-8") as f:
+                f.write(browser.page_source)
+            print(f"Page source saved to debug_logs/screenshots/{imdb_id}_page_source.html")
+            
+            # Ask if user wants to highlight potential rating elements
+            highlight_choice = input("Would you like to highlight potential rating elements for debugging? (y/n): ")
+            if highlight_choice.lower() == 'y':
+                highlighted_elements = highlight_potential_rating_elements(browser, rating)
+                screenshot_path = f"debug_logs/screenshots/{imdb_id}_highlighted.png"
+                browser.save_screenshot(screenshot_path)
+                print(f"Screenshot with highlighted elements saved to {screenshot_path}")
+                
+                # Ask if user wants to manually click a highlighted element
+                manual_choice = input("Would you like to try clicking a highlighted element manually? (y/n): ")
+                if manual_choice.lower() == 'y':
+                    print("Please enter the number of the element to click (1, 2, 3, etc.):")
+                    for i, (element, _) in enumerate(highlighted_elements):
+                        print(f"{i+1}. {element.get_attribute('outerHTML')[:100]}...")
                     
-                    # Close any open dialogs
-                    try:
-                        browser.find_element(By.CSS_SELECTOR, "button[data-testid='close-button']").click()
-                    except:
-                        pass
+                    element_choice = input("Enter element number (or 0 to skip): ")
+                    if element_choice.isdigit() and 0 < int(element_choice) <= len(highlighted_elements):
+                        element_idx = int(element_choice) - 1
+                        selected_element = highlighted_elements[element_idx][0]
+                        try:
+                            # Try to click the element
+                            browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", selected_element)
+                            time.sleep(1)
+                            browser.execute_script("arguments[0].click();", selected_element)
+                            print(f"Clicked element {element_choice}")
+                            time.sleep(2)
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_manual_click.png")
+                            return True
+                        except Exception as e:
+                            print(f"Failed to click element: {e}")
+        
+        # Try to locate the rate button
+        try:
+            # Enhanced check for already rated content
+            already_rated = False
+            already_rated_selectors = [
+                ".user-rating",                          # General user rating class
+                "[data-testid='hero-rating-bar__user-rating']", # New IMDb layout user rating
+                ".ipl-rating-star__rating",              # Rating star with value
+                "button.ipl-rating-interactive__star-display", # Interactive rating display
+                ".UserRatingButton__rating" # Newer IMDb user rating
+            ]
+            
+            for selector in already_rated_selectors:
+                elements = browser.find_elements(By.CSS_SELECTOR, selector)
+                if elements:
+                    # Check if any element contains rating text
+                    for element in elements:
+                        try:
+                            text = element.text.strip()
+                            if text and any(str(i) in text for i in range(1, 11)):
+                                already_rated = True
+                                logger.info(f"Found existing rating: '{text}'")
+                                break
+                        except:
+                            pass
+                
+                if already_rated:
+                    break
+            
+            if already_rated:
+                print(f"Movie {title_text} is already rated on IMDb, skipping")
+                return True
+            
+            # Locate and click the rate button
+            print("Looking for rate button...")
+            rate_button_selectors = [
+                ".star-rating-button button",
+                ".star-rating-widget button",
+                "button[data-testid='hero-rating-bar__user-rating']",
+                "[data-testid='hero-rating-bar__user-rating']",
+                ".ipl-rating-star",
+                "button.ipl-rating-interactive",
+                ".UserRatingButton--default",
+                ".RatingBarButtonBase",
+                ".RatingsAddRating"
+            ]
+            
+            rate_button = None
+            for selector in rate_button_selectors:
+                try:
+                    rate_elements = browser.find_elements(By.CSS_SELECTOR, selector)
+                    if rate_elements:
+                        rate_button = rate_elements[0]
+                        logger.info(f"Found rate button with selector: {selector}")
+                        break
+                except Exception as e:
+                    if test_mode:
+                        print(f"Error with selector {selector}: {str(e)[:100]}...")
+            
+            if test_mode and not rate_button:
+                # Try to find buttons that could be the rate button
+                print("Looking for any clickable buttons...")
+                try:
+                    all_buttons = browser.find_elements(By.TAG_NAME, "button")
+                    print(f"Found {len(all_buttons)} buttons on the page")
+                    for i, btn in enumerate(all_buttons[:5]):  # Show first 5 buttons
+                        print(f"Button {i+1}: {btn.get_attribute('outerHTML')[:100]}...")
+                except Exception as e:
+                    print(f"Error listing buttons: {e}")
+            
+            if rate_button:
+                print("Found rate button, clicking...")
+                # Scroll to the rate button to ensure it's visible
+                browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", rate_button)
+                time.sleep(1)
+                
+                # Take screenshot of the rate button in test mode
+                if test_mode:
+                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_rate_button.png"
+                    browser.save_screenshot(screenshot_path)
+                    print(f"Rate button screenshot saved to {screenshot_path}")
                     
-                    # Wait a moment before retrying
-                    time.sleep(2)
-                    
-                    # Try again recursively
-                    return rate_movie_on_imdb(browser, imdb_id, rating, title, retry_count, max_retries)
+                # Check if the user wants to continue in test mode
+                if test_mode:
+                    choice = input("Continue with rating? (y/n): ")
+                    if choice.lower() != 'y':
+                        return False
+                
+                rate_button.click()
+                time.sleep(2)  # Give more time for the rating dialog to appear
+            else:
+                print("Rate button not found. Here are two ways to proceed:")
+                print("1. Try to find rating elements directly")
+                print("2. Skip this movie")
+                choice = input("Enter 1 to try finding rating elements, any other key to skip: ")
+                if choice == "1":
+                    print("Looking for rating elements directly...")
                 else:
-                    logger.warning(f"No confirmation after {max_retries} attempts, assuming rating was successful")
+                    print("Skipping this movie...")
+                    return False
             
+            # Select the rating from the popup
+            print("Looking for rating stars...")
+            time.sleep(3)  # Increased wait time for the rating popup to load
+            
+            # Different sites have different rating UIs, try multiple selectors
+            rating_selectors = [
+                f"button[aria-label='{rating} stars']",
+                f"button[aria-label='Rate {rating}']",
+                f".star-rating-stars a[title='Click to rate: {rating}']",
+                f"span.star-rating-star[title='Click to rate: {rating}']",
+                f"button.ipl-rating-star--rate.ipl-rating-star--size-lg[aria-label='Rate {rating}']",
+                f"button.ipl-rating-interactive__star[data-rating='{rating}']",
+                f"button[data-testid='rate-{rating}']",
+                f"button.RatingBarItem--clickable[data-testid='rating-{rating}']",
+                f"button[data-rating='{rating}']",
+                f"button.ipl-rating-star--size-lg[aria-label='Rate {rating}']",
+                f"button[title='Click to rate: {rating}']",
+                f"li[data-value='{rating}']",
+                f"div[data-value='{rating}']",
+                # New selectors for more current IMDb UI
+                f"button.ipc-rating__star--rate.ipc-rating__star--base[aria-label='Rate {rating}']", 
+                f"button.rating-star__star[data-label='{rating}']",
+                f"button[rate-value='{rating}']",
+                f".RatingBarItem[data-testid='rating-{rating}']",
+                # Generic number-based selector
+                f"button:nth-child({rating}) .rating-stars__star",
+                # Target the touch overlay that's causing issues
+                f"div.ipc-starbar__touch",
+                f".ipc-rating-star-group button[aria-label='Rate {rating}']",
+                f".ipc-starbar__rating__button[aria-label='Rate {rating}']"
+            ]
+            
+            # Try to wait for rating elements to become clickable
+            try:
+                # Wait for any rating container to be present
+                WebDriverWait(browser, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 
+                    ".ipl-rating-selector, .stars-rating-widget, .RatingBarItem, [class*='rating'], [class*='star']"))
+                )
+                print("Rating container found, looking for specific rating element...")
+            except TimeoutException:
+                print("Rating container not found within timeout, will still try to find rating element...")
+            
+            rating_element = None
+            for selector in rating_selectors:
+                try:
+                    elements = browser.find_elements(By.CSS_SELECTOR, selector)
+                    if elements:
+                        rating_element = elements[0]
+                        logger.info(f"Found rating element with selector: {selector}")
+                        break
+                except Exception as e:
+                    if test_mode:
+                        print(f"Error with rating selector {selector}: {str(e)[:100]}...")
+            
+            if rating_element:
+                print(f"Found rating element for {rating} stars, clicking...")
+                if test_mode:
+                    print(f"TEST MODE: Would click rating element for {rating} stars")
+                    print(f"Element found: {rating_element.get_attribute('outerHTML')}")
+                    choice = input("Press Enter to continue with rating or type 'skip' to skip: ")
+                    if choice.lower() == 'skip':
+                        return False
+                
+                # Scroll to the rating element to ensure it's visible
+                browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", rating_element)
+                time.sleep(2)  # Increased wait time
+                
+                # Take screenshot before clicking in test mode
+                if test_mode:
+                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_before_rating.png"
+                    browser.save_screenshot(screenshot_path)
+                
+                # Special handling for IMDb touch overlay
+                element_html = rating_element.get_attribute("outerHTML").lower()
+                element_class = rating_element.get_attribute("class") or ""
+                
+                # Check if we're dealing with the touch overlay that's causing issues
+                if "ipc-starbar__touch" in element_class or "ipc-starbar__touch" in element_html:
+                    print("Detected IMDb touch overlay, using special handling")
+                    try:
+                        # First attempt: Try to find all stars and click the right one by position
+                        parent = rating_element.find_element(By.XPATH, "..")
+                        stars = parent.find_elements(By.CSS_SELECTOR, "button")
+                        
+                        if len(stars) >= int(rating):
+                            # Use direct JavaScript click on the specific star
+                            target_star = stars[int(rating)-1]
+                            browser.execute_script("arguments[0].click();", target_star)
+                            print(f"Clicked star {rating} using JavaScript execution on star by position")
+                        else:
+                            # Alternative: try to specifically locate the correct star
+                            specific_star = browser.find_element(By.CSS_SELECTOR, f"button[aria-label='Rate {rating}']")
+                            browser.execute_script("arguments[0].click();", specific_star)
+                            print(f"Clicked star using specific selector")
+                    except Exception as e:
+                        print(f"Special handling initial attempt failed: {e}")
+                        
+                        try:
+                            # Second attempt: Try to temporarily remove the overlay
+                            browser.execute_script("arguments[0].style.pointerEvents = 'none';", rating_element)
+                            time.sleep(0.5)
+                            # Then find and click the actual button
+                            actual_button = browser.find_element(By.CSS_SELECTOR, f"button[aria-label='Rate {rating}']")
+                            browser.execute_script("arguments[0].click();", actual_button)
+                            print("Clicked star after disabling overlay")
+                        except Exception as e:
+                            print(f"Special handling second attempt failed: {e}")
+                            
+                            try:
+                                # Third attempt: Click at specific position within the starbar
+                                starbar = browser.find_element(By.CSS_SELECTOR, ".ipc-starbar, .ipc-rating-star-group")
+                                starbar_rect = starbar.rect
+                                
+                                # Calculate position based on rating (1-10)
+                                width = starbar_rect['width']
+                                x_offset = (width / 10) * int(rating) - (width / 20)  # Center of the target star
+                                y_offset = starbar_rect['height'] / 2
+                                
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(browser)
+                                actions.move_to_element_with_offset(starbar, x_offset, y_offset)
+                                actions.click()
+                                actions.perform()
+                                print(f"Clicked at calculated position within starbar")
+                            except Exception as e:
+                                print(f"Special handling third attempt failed: {e}")
+                                
+                                try:
+                                    # Fourth attempt: Try to target the specific button class from the error message
+                                    specific_buttons = browser.find_elements(By.CSS_SELECTOR, ".ipc-starbar__rating__button")
+                                    if len(specific_buttons) >= int(rating):
+                                        target_button = specific_buttons[int(rating)-1]
+                                        # Try using tab to focus and then press Enter
+                                        from selenium.webdriver.common.keys import Keys
+                                        actions = ActionChains(browser)
+                                        actions.move_to_element(target_button).perform()
+                                        time.sleep(0.5)
+                                        # Focus the element using JavaScript
+                                        browser.execute_script("arguments[0].focus();", target_button)
+                                        time.sleep(0.5)
+                                        # Send Enter key
+                                        target_button.send_keys(Keys.ENTER)
+                                        print("Used keyboard Enter after focus on star button")
+                                    else:
+                                        print(f"Not enough specific buttons found: {len(specific_buttons)}")
+                                except Exception as e:
+                                    print(f"Special handling fourth attempt failed: {e}")
+                                    
+                                    try:
+                                        # Fifth attempt (emergency): Try to completely remove the touch overlay from DOM
+                                        browser.execute_script("""
+                                        var overlays = document.querySelectorAll('.ipc-starbar__touch');
+                                        for(var i=0; i < overlays.length; i++) {
+                                            overlays[i].parentNode.removeChild(overlays[i]);
+                                        }
+                                        """)
+                                        time.sleep(0.5)
+                                        # Then try to find the stars again
+                                        target_stars = browser.find_elements(By.CSS_SELECTOR, 
+                                            f"button[aria-label='Rate {rating}'], .ipc-starbar__rating__button")
+                                        if target_stars:
+                                            browser.execute_script("arguments[0].click();", target_stars[0])
+                                            print("Clicked star after removing overlay from DOM")
+                                        else:
+                                            print("No stars found after removing overlay")
+                                    except Exception as e:
+                                        print(f"Emergency DOM manipulation failed: {e}")
+                                        # Now truly fall back to regular click methods
+                else:
+                    # Try multiple clicking methods
+                    try:
+                        # Method 1: Standard click
+                        rating_element.click()
+                    except Exception as e:
+                        print(f"Standard click failed: {e}")
+                        try:
+                            # Method 2: JavaScript click
+                            browser.execute_script("arguments[0].click();", rating_element)
+                            print("Clicked using JavaScript execution")
+                        except Exception as e:
+                            print(f"JavaScript click failed: {e}")
+                            try:
+                                # Method 3: Actions click
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                ActionChains(browser).move_to_element(rating_element).click().perform()
+                                print("Clicked using ActionChains")
+                            except Exception as e:
+                                print(f"ActionChains click failed: {e}")
+                                print("All click methods failed")
+                
+                time.sleep(3)  # Increased wait time for the rating to register
+                
+                # Look for and click the "Rate" confirmation button
+                try:
+                    print("Looking for 'Rate' confirmation button...")
+                    # Wait for the Rate button to appear
+                    WebDriverWait(browser, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, 
+                        ".ipc-rating-prompt, .ipc-promptable-dialog, [data-testid='promptable']"))
+                    )
+                    
+                    # In test mode, show what's in the prompt dialog
+                    if test_mode:
+                        print("Rating dialog content:")
+                        try:
+                            dialog = browser.find_element(By.CSS_SELECTOR, ".ipc-rating-prompt, .ipc-promptable-dialog, [data-testid='promptable']")
+                            dialog_html = dialog.get_attribute('outerHTML')
+                            print(f"Dialog found: {dialog_html[:200]}...") # Show beginning of dialog HTML
+                            
+                            # Look for all buttons in the dialog
+                            buttons = dialog.find_elements(By.TAG_NAME, "button")
+                            print(f"Found {len(buttons)} buttons in dialog:")
+                            for i, btn in enumerate(buttons[:5]):  # Show first 5 buttons
+                                btn_text = btn.text.strip()
+                                btn_html = btn.get_attribute('outerHTML')
+                                print(f"Button {i+1}: Text='{btn_text}', HTML={btn_html[:100]}...")
+                            
+                            # Save dialog screenshot
+                            screenshot_path = f"debug_logs/screenshots/{imdb_id}_rating_dialog.png"
+                            browser.save_screenshot(screenshot_path)
+                            print(f"Rating dialog screenshot saved to {screenshot_path}")
+                        except Exception as e:
+                            print(f"Error examining dialog: {e}")
+                    
+                    # Find the Rate confirmation button within the rating dialog
+                    rate_confirm_selectors = [
+                        # First try to find buttons with exact "Rate" text 
+                        ".ipc-rating-prompt button",
+                        ".ipc-promptable-dialog button",
+                        "[data-testid='promptable'] button:not([id='suggestion-search-button'])",
+                        
+                        # More specific selectors
+                        "[data-testid='promptable'] button[type='button']",
+                        ".ipc-rating-prompt__button",
+                        ".ipc-promptable-dialog button:not([id='suggestion-search-button'])",
+                        ".ipc-rating-prompt button.ipc-btn",
+                        
+                        # Avoid search button by only selecting within rating dialog
+                        ".ipc-rating-prompt .ipc-btn",
+                        "[data-testid='promptable'] .ipc-btn"
+                    ]
+                    
+                    rate_confirm_button = None
+                    for selector in rate_confirm_selectors:
+                        try:
+                            elements = browser.find_elements(By.CSS_SELECTOR, selector)
+                            if elements:
+                                for elem in elements:
+                                    elem_html = elem.get_attribute('outerHTML').lower()
+                                    elem_text = elem.text.lower()
+                                    
+                                    # Skip search button
+                                    if "search" in elem_html or "suggestion-search" in elem_html:
+                                        continue
+                                        
+                                    # Prefer buttons with "rate" text
+                                    if ("rate" in elem_text) or ("submit" in elem_text):
+                                        rate_confirm_button = elem
+                                        break
+                                
+                                # If no button with "rate" text was found, use the first one that's not the search button
+                                if not rate_confirm_button and elements:
+                                    for elem in elements:
+                                        if "search" not in elem.get_attribute('id') and "search" not in elem.get_attribute('class'):
+                                            rate_confirm_button = elem
+                                            break
+                        except Exception as e:
+                            if test_mode:
+                                print(f"Error with rate button selector {selector}: {str(e)[:100]}...")
+                    
+                    # Use XPath as a fallback
+                    if not rate_confirm_button:
+                        try:
+                            # Look for any button with "Rate" text
+                            xpath_selectors = [
+                                "//div[contains(@class, 'ipc-rating-prompt')]//button[contains(text(), 'Rate')]",
+                                "//div[@data-testid='promptable']//button[contains(text(), 'Rate')]",
+                                "//div[contains(@class, 'ipc-promptable-dialog')]//button[not(@id='suggestion-search-button')]"
+                            ]
+                            
+                            for xpath in xpath_selectors:
+                                elements = browser.find_elements(By.XPATH, xpath)
+                                if elements:
+                                    for elem in elements:
+                                        if "search" not in elem.get_attribute('id').lower():
+                                            rate_confirm_button = elem
+                                            print(f"Found rate button using XPath: {xpath}")
+                                            break
+                                if rate_confirm_button:
+                                    break
+                        except Exception as e:
+                            print(f"XPath fallback failed: {e}")
+                    
+                    # If we still haven't found the button, try clicking the dialog bottom
+                    if not rate_confirm_button:
+                        try:
+                            # Try clicking directly at coordinates of the "Rate" button
+                            dialog = browser.find_element(By.CSS_SELECTOR, ".ipc-rating-prompt, .ipc-promptable-dialog, [data-testid='promptable']")
+                            dialog_rect = dialog.rect
+                            
+                            # Calculate position for bottom center (likely location of the Rate button)
+                            x_offset = dialog_rect['width'] / 2
+                            y_offset = dialog_rect['height'] - 30  # 30px from bottom
+                            
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            actions = ActionChains(browser)
+                            actions.move_to_element_with_offset(dialog, x_offset, y_offset)
+                            actions.click()
+                            actions.perform()
+                            print("Clicked at likely Rate button position in dialog")
+                            
+                            if test_mode:
+                                browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_position_click.png")
+                                print("Screenshot saved after position click")
+                        except Exception as e:
+                            print(f"Position-based click failed: {e}")
+                    
+                    if rate_confirm_button:
+                        print("Found 'Rate' confirmation button, clicking to submit rating...")
+                        # Scroll to the button to ensure it's visible
+                        browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", rate_confirm_button)
+                        time.sleep(1)
+                        
+                        if test_mode:
+                            print(f"Rate button: {rate_confirm_button.get_attribute('outerHTML')}")
+                            screenshot_path = f"debug_logs/screenshots/{imdb_id}_rate_confirm_button.png"
+                            browser.save_screenshot(screenshot_path)
+                        
+                        try:
+                            # Try multiple clicking methods for the Rate button
+                            try:
+                                # Standard click
+                                rate_confirm_button.click()
+                            except Exception as e:
+                                print(f"Standard click on Rate button failed: {e}")
+                                try:
+                                    # JavaScript click
+                                    browser.execute_script("arguments[0].click();", rate_confirm_button)
+                                    print("Clicked Rate button using JavaScript execution")
+                                except Exception as e:
+                                    print(f"JavaScript click on Rate button failed: {e}")
+                                    try:
+                                        # ActionChains click
+                                        from selenium.webdriver.common.action_chains import ActionChains
+                                        ActionChains(browser).move_to_element(rate_confirm_button).click().perform()
+                                        print("Clicked Rate button using ActionChains")
+                                    except Exception as e:
+                                        print(f"All click methods for Rate button failed: {e}")
+                            
+                            print("Rating submission complete")
+                        except Exception as e:
+                            print(f"Error clicking Rate confirmation button: {e}")
+                    else:
+                        print("Rate confirmation button not found - the rating may or may not be saved")
+                        if test_mode:
+                            # For debugging, save a screenshot to see what's available
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_rate_button_not_found.png")
+                            print("Screenshot saved for debugging the missing Rate button")
+                except Exception as e:
+                    print(f"Error finding or handling the Rate confirmation button: {e}")
+                    if test_mode:
+                        print("This may be normal if the rating is saved automatically")
+                
+                # Take another screenshot after rating in test mode
+                if test_mode:
+                    screenshot_path = f"debug_logs/screenshots/{imdb_id}_after_rating.png"
+                    browser.save_screenshot(screenshot_path)
+                    print(f"After-rating screenshot saved to {screenshot_path}")
+                
+                # Better check for confirmation
+                confirmation_selectors = [
+                    ".ipl-rating-interactive__star-rating",
+                    ".user-rating",
+                    ".imdb-rating .star-rating-text",
+                    "[data-testid='hero-rating-bar__user-rating']",
+                    ".ipl-rating-star__rating",
+                    ".UserRatingButton__rating"
+                ]
+                
+                # Wait longer for confirmation to appear
+                time.sleep(RATING_CONFIRMATION_WAIT)
+                
+                confirmation_found = False
+                for selector in confirmation_selectors:
+                    elements = browser.find_elements(By.CSS_SELECTOR, selector)
+                    if elements:
+                        for element in elements:
+                            try:
+                                text = element.text.strip()
+                                if text and any(str(i) in text for i in range(1, 11)):
+                                    print(f"Rating confirmation found: '{text}'")
+                                    confirmation_found = True
+                                    break
+                            except:
+                                pass
+                    
+                    if confirmation_found:
+                        break
+                
+                if not confirmation_found:
+                    print("No explicit rating confirmation found")
+                    if retry_count < RATING_CONFIRMATION_RETRIES:
+                        print(f"Automatically retrying rating (attempt {retry_count + 1}/{RATING_CONFIRMATION_RETRIES})")
+                        time.sleep(2)  # Wait before retry
+                        return rate_movie_on_imdb(browser, imdb_id, rating, title, retry_count + 1, test_mode)
+                    else:
+                        print(f"Failed to confirm rating after {RATING_CONFIRMATION_RETRIES} attempts")
+                        if test_mode:
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_no_confirmation.png")
+                            print(f"Screenshot saved for debugging the missing confirmation")
+                        return False
+                
+                return True
+                
+            else:
+                print("Rating selection not found. Please try rating manually.")
+                if test_mode:
+                    # Try clicking on the rating widget container to see if that brings up stars
+                    containers = browser.find_elements(By.CSS_SELECTOR, ".star-rating-widget, .ipl-rating-interactive, .RatingBarWrapper")
+                    if containers:
+                        print("Found rating container, trying to click it...")
+                        try:
+                            containers[0].click()
+                            time.sleep(1)
+                            browser.save_screenshot(f"debug_logs/screenshots/{imdb_id}_after_container_click.png")
+                            print("Clicked container, check screenshot to see if stars appeared")
+                        except:
+                            print("Failed to click container")
+                
+                input("Press Enter after manual rating or to skip this movie...")
+                return True
+                
+        except (NoSuchElementException, StaleElementReferenceException) as e:
+            print(f"Error finding rating elements: {e}")
+            print("Please try rating manually.")
+            input("Press Enter after manual rating or to skip this movie...")
             return True
             
-        except Exception as e:
-            logger.error(f"Error selecting rating: {e}")
-            return False
-        
     except Exception as e:
-        logger.error(f"Error rating movie {imdb_id}: {e}")
-        return False
+        if retry_count < MAX_RETRIES:
+            backoff_time = exponential_backoff(retry_count)
+            logger.warning(f"Error rating movie {imdb_id}, retrying in {backoff_time:.2f}s: {e}")
+            time.sleep(backoff_time)
+            return rate_movie_on_imdb(browser, imdb_id, rating, title, retry_count + 1, test_mode)
+        else:
+            logger.error(f"Failed to rate movie {imdb_id} after {MAX_RETRIES} attempts: {e}")
+            print("Manual intervention required for this movie.")
+            choice = input("Press Enter to skip or type 'retry' to try once more: ")
+            if choice.lower() == "retry":
+                return rate_movie_on_imdb(browser, imdb_id, rating, title, 0, test_mode)
+            return False
 
 def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
     """Execute the migration plan and rate movies on IMDb."""
@@ -496,90 +989,83 @@ def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
         else:
             progress_data = {"processed_imdb_ids": []}
         
-        # Setup browser once for the entire migration process
+        # Process each movie
+        success_count = 0
+        failure_count = 0
+        processed_count = 0
         browser = None
         
         try:
-            # Setup browser once for the entire migration process
+            # Setup browser once for all movies
             browser = setup_browser(headless=False, proxy=PROXY)
             
-            # Login once at the beginning
+            # Login first
             if not login_to_imdb_manually(browser):
                 logger.error("Failed to login to IMDb")
                 return False
             
-            # Process all movies in a single session
-            try:
-                # Use tqdm for a progress bar
-                success_count = 0
-                failure_count = 0
-                processed_count = 0
+            # Use tqdm for a progress bar
+            for movie in tqdm(movies_to_migrate, desc=f"Rating movies"):
+                processed_count += 1
+                # Extract movie data from the migration plan structure
+                douban_movie = movie.get("douban", {})
+                imdb_movie = movie.get("imdb", {})
                 
-                for movie in tqdm(movies_to_migrate, desc="Rating movies"):
-                    processed_count += 1
-                    # Extract movie data from the migration plan structure
-                    douban_movie = movie.get("douban", {})
-                    imdb_movie = movie.get("imdb", {})
+                # Get the IMDb ID from the IMDb data or Douban data
+                imdb_id = imdb_movie.get("imdb_id") or douban_movie.get("imdb_id")
+                
+                # Get the rating to apply (already converted to IMDb scale)
+                rating_to_apply = movie.get("imdb_rating", 0)
+                
+                # Get the title from Douban data
+                title = douban_movie.get("title", "Unknown")
+                
+                if not imdb_id or not rating_to_apply:
+                    logger.warning(f"Missing IMDb ID or rating for movie: {title}")
+                    failure_count += 1
+                    continue
+                
+                logger.info(f"Processing movie: {title} (IMDb: {imdb_id}, Rating: {rating_to_apply})")
+                
+                try:
+                    success = rate_movie_on_imdb(
+                        browser, 
+                        imdb_id, 
+                        rating_to_apply, 
+                        title=title,
+                        test_mode=test_mode
+                    )
                     
-                    # Get the IMDb ID from the IMDb data or Douban data
-                    imdb_id = imdb_movie.get("imdb_id") or douban_movie.get("imdb_id")
-                    
-                    # Get the rating to apply (already converted to IMDb scale)
-                    rating_to_apply = movie.get("imdb_rating", 0)
-                    
-                    # Get the title from Douban data
-                    title = douban_movie.get("title", "Unknown")
-                    
-                    if not imdb_id or not rating_to_apply:
-                        logger.warning(f"Missing IMDb ID or rating for movie: {title}")
+                    if success:
+                        success_count += 1
+                        # Add to processed list
+                        if imdb_id not in progress_data["processed_imdb_ids"]:
+                            progress_data["processed_imdb_ids"].append(imdb_id)
+                            
+                            # Save progress after each successful rating
+                            try:
+                                with open(MIGRATION_PROGRESS_PATH, 'w', encoding='utf-8') as f:
+                                    json.dump(progress_data, f, ensure_ascii=False, indent=2)
+                                    f.flush()
+                                    os.fsync(f.fileno())
+                                    logger.info(f"Updated progress file with {len(progress_data['processed_imdb_ids'])} processed movies")
+                            except Exception as e:
+                                logger.warning(f"Error saving progress data: {e}")
+                    else:
                         failure_count += 1
-                        continue
                     
-                    logger.info(f"Processing movie: {title} (IMDb: {imdb_id}, Rating: {rating_to_apply})")
+                    # Random wait between movies to avoid detection
+                    wait_time = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
+                    logger.info(f"Waiting {wait_time:.1f} seconds before next movie...")
+                    time.sleep(wait_time)
                     
-                    try:
-                        success = rate_movie_on_imdb(
-                            browser, 
-                            imdb_id, 
-                            rating_to_apply, 
-                            title=title, 
-                            retry_count=0, 
-                            max_retries=3
-                        )
-                        
-                        if success:
-                            success_count += 1
-                            # Add to processed list
-                            if imdb_id not in progress_data["processed_imdb_ids"]:
-                                progress_data["processed_imdb_ids"].append(imdb_id)
-                                
-                                # Save progress after each successful rating
-                                try:
-                                    with open(MIGRATION_PROGRESS_PATH, 'w', encoding='utf-8') as f:
-                                        json.dump(progress_data, f, ensure_ascii=False, indent=2)
-                                        f.flush()
-                                        os.fsync(f.fileno())
-                                        logger.info(f"Updated progress file with {len(progress_data['processed_imdb_ids'])} processed movies")
-                                except Exception as e:
-                                    logger.warning(f"Error saving progress data: {e}")
-                        else:
-                            logger.error(f"Failed to rate movie {title}")
-                            failure_count += 1
-                        
-                        # Random wait between movies to avoid detection
-                        wait_time = random.uniform(WAIT_BETWEEN_MOVIES[0], WAIT_BETWEEN_MOVIES[1])
-                        logger.info(f"Waiting {wait_time:.1f} seconds before next movie...")
-                        time.sleep(wait_time)
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing movie {title}: {e}")
-                        failure_count += 1
-            
-            except Exception as e:
-                logger.error(f"Error during movie processing: {e}")
+                except Exception as e:
+                    logger.error(f"Error processing movie {title}: {e}")
+                    failure_count += 1
+        
         except Exception as e:
-            logger.error(f"Error during browser session: {e}")
-         
+            logger.error(f"Error during processing: {e}")
+        
         # Print summary
         print("\n=== Migration Summary ===")
         print(f"Total processed: {processed_count}")
@@ -588,7 +1074,7 @@ def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
         print(f"Total rated so far: {len(progress_data['processed_imdb_ids'])}")
         print(f"Remaining to rate: {total_movies - len(progress_data['processed_imdb_ids'])}")
         
-        return len(progress_data['processed_imdb_ids']) > 0
+        return success_count > 0
     
     except Exception as e:
         logger.error(f"Error during migration: {e}")
