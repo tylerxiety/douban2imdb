@@ -1099,7 +1099,7 @@ def migrate_ratings():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler("../logs/migration.log"),
+            logging.FileHandler("logs/migration.log"),
             logging.StreamHandler()
         ]
     )

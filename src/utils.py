@@ -28,9 +28,9 @@ load_dotenv()
 
 def ensure_data_dir():
     """Ensure the data directory exists."""
-    Path("../data").mkdir(exist_ok=True)
+    Path("data").mkdir(exist_ok=True)
     
-    # Also ensure logs directories exist
+    # Also ensure logs directories exist in the root folder
     Path("../logs").mkdir(exist_ok=True)
     Path("../debug_logs").mkdir(exist_ok=True)
     Path("../debug_logs/screenshots").mkdir(exist_ok=True)

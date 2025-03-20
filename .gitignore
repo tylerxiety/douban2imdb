@@ -32,8 +32,8 @@ venv/
 ENV/
 
 # Logs and debug files
-/logs/
-/debug_logs/
+logs/
+debug_logs/
 *.log
 
 # Debug HTML files
@@ -65,13 +65,18 @@ geckodriver
 geckodriver.exe
 
 # Project specific
-/debug_logs/detection_pages/
+debug_logs/detection_pages/
 
 # Keep logs directory structure but ignore content
-/logs/*
-!/logs/.gitkeep
-/debug_logs/*
-!/debug_logs/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Keep debug_logs directory structure but ignore content
+debug_logs/*
+!debug_logs/.gitkeep
+!debug_logs/screenshots/
+debug_logs/screenshots/*
+!debug_logs/screenshots/.gitkeep
 
 # Jupyter Notebook
 .ipynb_checkpoints
