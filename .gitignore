@@ -34,6 +34,7 @@ ENV/
 # Logs and debug files
 logs/
 debug_logs/
+screenshots/
 *.log
 
 # Debug HTML files
@@ -89,3 +90,7 @@ pip-delete-this-directory.txt
 archive/
 archive/*
 !archive/.gitkeep
+
+# Specstory
+.specstory/
+
