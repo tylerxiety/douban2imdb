@@ -1,5 +1,7 @@
 # 豆瓣到IMDb评分迁移工具
 
+[English](README.md) | 简体中文
+
 一个将您的豆瓣电影评分迁移到IMDb账户的Python工具。
 
 ## 功能特点
