@@ -1,5 +1,7 @@
 # Douban to IMDb
 
+English | [简体中文](README_zh-CN.md)
+
 A Python tool to migrate your Douban movie ratings to your IMDb account.
 
 ## Features
