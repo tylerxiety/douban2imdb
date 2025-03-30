@@ -35,8 +35,8 @@ SPEED_MODE = True  # Set to True to disable images for faster loading
 CONNECTION_TIMEOUT = 90  # Seconds to wait for connections before timeout
 WAIT_BETWEEN_MOVIES = (0.5, 1)  # Further reduced wait between movies for faster processing
 PROXY = os.getenv("PROXY", None)  # Proxy in format http://user:pass@host:port
-RATING_CONFIRMATION_RETRIES = int(os.getenv("RATING_CONFIRMATION_RETRIES", "3"))  # Number of retries for rating confirmation
-RATING_CONFIRMATION_WAIT = int(os.getenv("RATING_CONFIRMATION_WAIT", "10"))  # Seconds to wait for rating confirmation
+RATING_CONFIRMATION_RETRIES = int(os.getenv("RATING_CONFIRMATION_RETRIES", "5"))  # Number of retries for rating confirmation
+RATING_CONFIRMATION_WAIT = int(os.getenv("RATING_CONFIRMATION_WAIT", "30"))  # Seconds to wait for rating confirmation
 
 def setup_browser(headless=False, proxy=None):
     """Set up and return a browser for automation."""
@@ -477,25 +477,18 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                     browser.save_screenshot(screenshot_path)
                     print(f"Rate button screenshot saved to {screenshot_path}")
                     
-                # Check if the user wants to continue in test mode
+                # In test mode, automatically continue
                 if test_mode:
-                    choice = input("Continue with rating? (y/n): ")
-                    if choice.lower() != 'y':
-                        return False
+                    print(f"TEST MODE: Would click rating element for {rating} stars")
+                    print(f"Element found: {rating_element.get_attribute('outerHTML')}")
+                    print("Automatically continuing with rating...")
                 
                 rate_button.click()
                 time.sleep(2)  # Give more time for the rating dialog to appear
             else:
-                print("Rate button not found. Here are two ways to proceed:")
-                print("1. Try to find rating elements directly")
-                print("2. Skip this movie")
-                choice = input("Enter 1 to try finding rating elements, any other key to skip: ")
-                if choice == "1":
-                    print("Looking for rating elements directly...")
-                else:
-                    print("Skipping this movie...")
-                    return False
-            
+                print("Rate button not found. Automatically trying to find rating elements directly...")
+                print("Looking for rating elements directly...")
+                
             # Select the rating from the popup
             print("Looking for rating stars...")
             time.sleep(3)  # Increased wait time for the rating popup to load
@@ -556,9 +549,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 if test_mode:
                     print(f"TEST MODE: Would click rating element for {rating} stars")
                     print(f"Element found: {rating_element.get_attribute('outerHTML')}")
-                    choice = input("Press Enter to continue with rating or type 'skip' to skip: ")
-                    if choice.lower() == 'skip':
-                        return False
+                    print("Automatically continuing with rating...")
                 
                 # Scroll to the rating element to ensure it's visible
                 browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", rating_element)
@@ -666,18 +657,19 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                                         print(f"Emergency DOM manipulation failed: {e}")
                                         # Now truly fall back to regular click methods
                 else:
-                    # Try multiple clicking methods
+                    # Try multiple clicking methods, prioritizing JavaScript click
                     try:
-                        # Method 1: Standard click
-                        rating_element.click()
+                        # Method 1: JavaScript click (prioritized)
+                        browser.execute_script("arguments[0].click();", rating_element)
+                        print("Clicked using JavaScript execution")
                     except Exception as e:
-                        print(f"Standard click failed: {e}")
+                        print(f"JavaScript click failed: {e}")
                         try:
-                            # Method 2: JavaScript click
-                            browser.execute_script("arguments[0].click();", rating_element)
-                            print("Clicked using JavaScript execution")
+                            # Method 2: Standard click
+                            rating_element.click()
+                            print("Clicked using standard click")
                         except Exception as e:
-                            print(f"JavaScript click failed: {e}")
+                            print(f"Standard click failed: {e}")
                             try:
                                 # Method 3: Actions click
                                 from selenium.webdriver.common.action_chains import ActionChains
@@ -687,7 +679,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                                 print(f"ActionChains click failed: {e}")
                                 print("All click methods failed")
                 
-                time.sleep(3)  # Increased wait time for the rating to register
+                time.sleep(5)  # Increased wait time for the rating to register
                 
                 # Look for and click the "Rate" confirmation button
                 try:
@@ -826,18 +818,19 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                             browser.save_screenshot(screenshot_path)
                         
                         try:
-                            # Try multiple clicking methods for the Rate button
+                            # Try multiple clicking methods for the Rate button, prioritizing JavaScript click
                             try:
-                                # Standard click
-                                rate_confirm_button.click()
+                                # JavaScript click (prioritized)
+                                browser.execute_script("arguments[0].click();", rate_confirm_button)
+                                print("Clicked Rate button using JavaScript execution")
                             except Exception as e:
-                                print(f"Standard click on Rate button failed: {e}")
+                                print(f"JavaScript click on Rate button failed: {e}")
                                 try:
-                                    # JavaScript click
-                                    browser.execute_script("arguments[0].click();", rate_confirm_button)
-                                    print("Clicked Rate button using JavaScript execution")
+                                    # Standard click
+                                    rate_confirm_button.click()
+                                    print("Clicked Rate button using standard click")
                                 except Exception as e:
-                                    print(f"JavaScript click on Rate button failed: {e}")
+                                    print(f"Standard click on Rate button failed: {e}")
                                     try:
                                         # ActionChains click
                                         from selenium.webdriver.common.action_chains import ActionChains
@@ -847,6 +840,8 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                                         print(f"All click methods for Rate button failed: {e}")
                             
                             print("Rating submission complete")
+                            # Wait longer for any animations or page updates to complete
+                            time.sleep(10)
                         except Exception as e:
                             print(f"Error clicking Rate confirmation button: {e}")
                     else:
@@ -912,28 +907,21 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
                 return True
                 
             else:
-                print("Rating selection not found. Please try rating manually.")
-                if test_mode:
-                    # Try clicking on the rating widget container to see if that brings up stars
-                    containers = browser.find_elements(By.CSS_SELECTOR, ".star-rating-widget, .ipl-rating-interactive, .RatingBarWrapper")
-                    if containers:
-                        print("Found rating container, trying to click it...")
-                        try:
-                            containers[0].click()
-                            time.sleep(1)
-                            browser.save_screenshot(f"../debug_logs/screenshots/{imdb_id}_after_container_click.png")
-                            print("Clicked container, check screenshot to see if stars appeared")
-                        except:
-                            print("Failed to click container")
-                
-                input("Press Enter after manual rating or to skip this movie...")
-                return True
+                print("Rate button not found. Automatically trying to find rating elements directly...")
+                print("Looking for rating elements directly...")
+                return False
                 
         except (NoSuchElementException, StaleElementReferenceException) as e:
             print(f"Error finding rating elements: {e}")
-            print("Please try rating manually.")
-            input("Press Enter after manual rating or to skip this movie...")
-            return True
+            print("Automatically retrying rating...")
+            if retry_count < MAX_RETRIES:
+                backoff_time = exponential_backoff(retry_count)
+                logger.warning(f"Error with rating elements, retrying in {backoff_time:.2f}s")
+                time.sleep(backoff_time)
+                return rate_movie_on_imdb(browser, imdb_id, rating, title, retry_count + 1, test_mode)
+            else:
+                logger.error(f"Failed to find rating elements after {MAX_RETRIES} attempts")
+                return False
             
     except Exception as e:
         if retry_count < MAX_RETRIES:
@@ -943,10 +931,7 @@ def rate_movie_on_imdb(browser, imdb_id, rating, title=None, retry_count=0, test
             return rate_movie_on_imdb(browser, imdb_id, rating, title, retry_count + 1, test_mode)
         else:
             logger.error(f"Failed to rate movie {imdb_id} after {MAX_RETRIES} attempts: {e}")
-            print("Manual intervention required for this movie.")
-            choice = input("Press Enter to skip or type 'retry' to try once more: ")
-            if choice.lower() == "retry":
-                return rate_movie_on_imdb(browser, imdb_id, rating, title, 0, test_mode)
+            print("Maximum retries reached. Skipping this movie.")
             return False
 
 def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
@@ -1087,6 +1072,24 @@ def execute_migration_plan(migration_plan, max_movies=None, test_mode=False):
             except:
                 pass
 
+def migrate_ratings_with_option(option=None):
+    """Main function for migrating ratings with a pre-selected option."""
+    print("\n===== DOUBAN TO IMDB MIGRATION =====")
+    print("This script will help you migrate your Douban movie ratings to IMDb.")
+    
+    if option is None:
+        print("\nChoose an option:")
+        print("1. Create migration plan")
+        print("2. Execute migration plan")
+        print("3. Create plan and execute immediately")
+        
+        choice = input("\nEnter your choice (1-3): ")
+    else:
+        choice = str(option)
+    
+    # Rest of your function using the choice variable
+    # ...
+
 def migrate_ratings():
     """Interactive function to migrate ratings."""
     print("\n=== Douban to IMDb Rating Migration ===")
@@ -1099,7 +1102,7 @@ def migrate_ratings():
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler("logs/migration.log"),
+            logging.FileHandler("../logs/migration.log"),
             logging.StreamHandler()
         ]
     )

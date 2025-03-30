@@ -12,10 +12,13 @@ A Python tool to migrate your Douban movie ratings to your IMDb account.
 
 ### Additional Features
 - **TV Show Support**: Properly handles TV series with multiple seasons
-- **Rating Conversion**: Converts Douban's 5-star to IMDb's 10-point scale
+- **Rating Conversion**: Converts Douban's 5-star to IMDb's 10-star scale
 - **Resume Support**: Can continue from where it left off if interrupted
 - **Proxy Support**: Optional proxy configuration for better reliability
 
+
+## Requirements
+- Python 3.8 or higher
 
 ## Installation
 
@@ -25,18 +28,29 @@ git clone https://github.com/tylerxiety/douban2imdb.git
 cd douban2imdb
 ```
 
-2. Install requirements:
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+# On Windows
+venv\Scripts\activate
+# On macOS/Linux
+source venv/bin/activate
+```
+
+3. Install requirements:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set up environment variables (optional):
+> Note: The `venv` folder is ignored by git and won't be included in the repository.
+
+4. Set up environment variables (optional):
 ```bash
-cp .env.sample .env
+cp .env.example .env
 # Edit .env file with your preferred settings
 ```
 
-4. Make sure you have Chrome installed (for the Selenium web driver).
+5. Make sure you have Chrome installed (for the Selenium web driver). And you know your Douban ID.
 
 ## Usage
 
@@ -63,7 +77,7 @@ You can also run specific steps:
 python src/main.py --step export_douban  # Only export Douban ratings
 python src/main.py --step export_imdb     # Only export IMDb ratings (optional)
 python src/main.py --step prepare         # Only prepare the migration plan
-python src/main.py --step migrate         # Only execute the migration
+python src/main.py --step migrate         # Only execute the migration (select Option 2)
 ```
 
 ### Step 1: Export Your Douban Ratings

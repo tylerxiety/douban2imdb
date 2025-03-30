@@ -16,6 +16,8 @@
 - **断点续传**：可从中断处继续操作
 - **代理支持**：可选代理配置，提高可靠性
 
+## 要求
+- Python 3.8 或更高版本
 
 ## 安装
 
@@ -25,18 +27,29 @@ git clone https://github.com/tylerxiety/douban2imdb.git
 cd douban2imdb
 ```
 
-2. 安装依赖：
+2. 创建并激活虚拟环境：
+```bash
+python -m venv venv
+# Windows系统
+venv\Scripts\activate
+# macOS/Linux系统
+source venv/bin/activate
+```
+
+3. 安装依赖：
 ```bash
 pip install -r requirements.txt
 ```
 
-3. 设置环境变量（可选）：
+> 注意：venv文件夹已被git忽略，不会包含在代码仓库中。
+
+4. 设置环境变量（可选）：
 ```bash
-cp .env.sample .env
+cp .env.example .env
 # 编辑.env文件，根据您的需求修改设置
 ```
 
-4. 确保您已安装Chrome浏览器（用于Selenium网页驱动）。
+5. 确保您已安装Chrome浏览器（用于Selenium网页驱动）。以及知道您的豆瓣ID。
 
 ## 使用方法
 
@@ -63,7 +76,7 @@ python src/main.py
 python src/main.py --step export_douban  # 仅导出豆瓣评分
 python src/main.py --step export_imdb     # 仅导出IMDb评分（可选）
 python src/main.py --step prepare         # 仅准备迁移计划
-python src/main.py --step migrate         # 仅执行迁移
+python src/main.py --step migrate         # 仅执行迁移（选择2）
 ```
 
 ### 步骤1：导出您的豆瓣评分

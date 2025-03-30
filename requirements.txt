@@ -6,3 +6,4 @@ urllib3==2.0.7
 webdriver-manager==4.0.1
 fake-useragent==1.4.0
 python-dotenv==1.0.0 
+chromedriver-autoinstaller==0.6.4 
